@@ -10,6 +10,7 @@ sources:
   - Cargo.lock
   - rustfmt.toml
   - tools/validate-mermaid.mjs
+  - docs/diagrams/tools/lib/pele-static.cjs
   - crates/sealmap-model/src/lib.rs
   - crates/sealmap-model/Cargo.toml
   - crates/sealmap-rust/src/lib.rs
@@ -20,7 +21,7 @@ sources:
   - crates/sealmap/src/main.rs
   - docs/DESIGN.md
   - README.md
-verified_commit: eacc59ece21274273c6bf2c83d4642b4fa7acaf5
+verified_commit: cd7570b9a9bb9a8560918c1f3e4eed8334e1b852
 ---
 ## For developers
 
@@ -72,14 +73,13 @@ flowchart TB
         M1 --> M2
     end
     subgraph MER["mermaid job, Node 22, ci.yml:49"]
-        X1["install mermaid 12 and puppeteer<br/>ci.yml:58"]
-        X2["generate a fresh corpus into .sealmap<br/>ci.yml:60"]
-        X3["render every block, MODE render<br/>ci.yml:63-65"]
-        X1 --> X2 --> X3
+        X2["generate a fresh corpus into .sealmap<br/>ci.yml:59"]
+        X3["render every block with Pele, MODE render<br/>ci.yml:62-64"]
+        X2 --> X3
     end
-    subgraph DIA["diagrams job, full history, ci.yml:70"]
-        D1["structure and every path:line citation<br/>at its topic's stamp, strict<br/>ci.yml:83"]
-        D2["mmdc render with the width ceiling<br/>ci.yml:84"]
+    subgraph DIA["diagrams job, full history, ci.yml:69"]
+        D1["structure and every path:line citation<br/>at its topic's stamp, strict<br/>ci.yml:78"]
+        D2["Pele render with the width ceiling<br/>ci.yml:79"]
         D1 --> D2
     end
     RUST --> MSRV --> MER --> DIA
@@ -87,9 +87,9 @@ flowchart TB
 
 **What it shows.** Stable gets the full lint, test and doc gate and a
 determinism check; the declared MSRV gets build and test against the
-lockfile; a freshly generated corpus is rendered by real Mermaid in headless
-Chromium; and the hand-authored corpus is checked and rendered by its own
-generator.
+lockfile; a freshly generated corpus is rendered by Pele, the estate's
+Mermaid-syntax renderer, in-process with no browser; and the hand-authored
+corpus is checked and rendered by its own generator through the same pinned Pele.
 
 **Why it is this way.** Nothing generated is committed any more, so the gate
 is that two generations agree byte for byte (`.github/workflows/ci.yml:24`-`25`),
@@ -238,25 +238,26 @@ crate is meant to start from.
 ```mermaid
 sequenceDiagram
     autonumber
-    participant CI as mermaid job<br/>ci.yml:63
-    participant VM as validate-mermaid.mjs<br/>validate-mermaid.mjs:7
-    participant BR as headless Chromium with mermaid
-    CI->>VM: every md under the fresh .sealmap, MODE render (ci.yml:65)
-    VM->>VM: collect fenced mermaid blocks (validate-mermaid.mjs:11)
-    VM->>BR: launch, load mermaid.min.js, raise text and edge limits (validate-mermaid.mjs:14)
-    loop chunks of 100 blocks
-        VM->>BR: render, or parse when MODE is unset (validate-mermaid.mjs:28)
-        BR-->>VM: null or the error text
+    participant CI as mermaid job<br/>ci.yml:62
+    participant VM as validate-mermaid.mjs<br/>validate-mermaid.mjs:8
+    participant PL as Pele, vendored and sha256-pinned<br/>pele-static.cjs:28
+    CI->>VM: every md under the fresh .sealmap, MODE render (ci.yml:64)
+    VM->>PL: load the vendored build, refuse a sha256 mismatch (pele-static.cjs:34)
+    VM->>VM: collect fenced mermaid blocks (validate-mermaid.mjs:14)
+    loop every block, in-process
+        VM->>PL: render, or parse when MODE is unset (validate-mermaid.mjs:20-21)
+        PL-->>VM: SVG, or a PeleError with the Mermaid line
     end
-    VM-->>CI: count failed, exit 1 if any (validate-mermaid.mjs:41)
+    VM-->>CI: count failed, exit 1 if any (validate-mermaid.mjs:28)
 ```
 
-**What it shows.** The validator extracts every fenced block and asks real
-Mermaid to lay it out, in batches, in one browser page.
+**What it shows.** The validator extracts every fenced block and has Pele lay
+each one out in the same Node process, with no browser and no npm install.
 
-**Why it is this way.** Rendering in the real library is the only check that
-matches what a reader's renderer does; the edge and text limits are raised so
-large generated diagrams are judged on grammar and layout, not size
-(`tools/validate-mermaid.mjs:19`). The script defaults to `parse`
-(`tools/validate-mermaid.mjs:15`); CI asks for a full render because some
-faults only surface at layout (`.github/workflows/ci.yml:61`-`62`).
+**Why it is this way.** Pele is the renderer every estate surface uses
+(VisionFlow ADR-2020), so validating with it matches what readers see; it
+reads Mermaid 12.1 syntax. The build is vendored and checked against the
+sha256 in its `VERSION` before use (`docs/diagrams/tools/lib/pele-static.cjs:34`).
+The script defaults to `parse` (`tools/validate-mermaid.mjs:10`); CI asks for
+a full render because some faults only surface at layout
+(`.github/workflows/ci.yml:60`-`61`).

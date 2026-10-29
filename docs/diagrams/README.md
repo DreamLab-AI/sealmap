@@ -52,7 +52,7 @@ From the repository root:
 
 ```sh
 node docs/diagrams/tools/diagram-index-gen.cjs docs/diagrams --check --cite-check --strict-citations
-node docs/diagrams/tools/diagram-index-gen.cjs docs/diagrams --check --render   # needs mmdc
+node docs/diagrams/tools/diagram-index-gen.cjs docs/diagrams --check --render   # Pele, vendored; no browser
 node docs/diagrams/tools/diagram-index-gen.cjs docs/diagrams                    # rewrites the block below, COVERAGE.md, REGISTER.md
 ```
 

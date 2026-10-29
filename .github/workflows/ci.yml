@@ -55,18 +55,17 @@ jobs:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: npm i --no-save mermaid@12 puppeteer
       # Render a freshly generated corpus: nothing generated is committed.
       - run: cargo run --release -p sealmap -- generate . --name sealmap -o .sealmap
-      # A full render, not just a parse: some faults (layout, keyword aliases)
-      # only surface when Mermaid lays the diagram out.
+      # A full render with Pele, not just a parse: some faults (layout, keyword
+      # aliases) only surface when the diagram is laid out.
       - run: node tools/validate-mermaid.mjs $(find .sealmap -name '*.md')
         env:
           MODE: render
 
   # The hand-authored corpus: structure, every path:line citation resolved at
-  # its topic's declared verified_commit (hence full history), and an mmdc
-  # render of every diagram with the 4500 px legibility ceiling.
+  # its topic's declared verified_commit (hence full history), and a Pele
+  # render of every diagram (in-process, no browser) with the 4500 px ceiling.
   diagrams:
     runs-on: ubuntu-latest
     steps:
@@ -76,9 +75,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm i -g @mermaid-js/mermaid-cli@11
-      # Ubuntu 24.04 blocks the unprivileged user namespaces Chrome's sandbox
-      # needs; mmdc offers no flag to pass --no-sandbox through the generator.
-      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: node docs/diagrams/tools/diagram-index-gen.cjs docs/diagrams --check --cite-check --strict-citations
       - run: node docs/diagrams/tools/diagram-index-gen.cjs docs/diagrams --check --render

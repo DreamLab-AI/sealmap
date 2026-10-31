@@ -28,8 +28,9 @@
 //! ```
 //!
 //! `file` is relative to the lock's directory; `reviewer` and `model` are
-//! opaque strings. Each sealed topic also carries one static pointer line in
-//! its front matter, `sealed: seals.lock`, so a topic is self-describing and
+//! `host:model` routes (see [`route`](crate::route)); [`sign`] refuses a pair
+//! that shares a model family or whose family is unknown. Each sealed topic
+//! also carries one static pointer line in its front matter, `sealed: seals.lock`, so a topic is self-describing and
 //! re-seals never rewrite prose: [`topic_hash`] skips that line.
 //!
 //! # The checks

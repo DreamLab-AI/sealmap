@@ -76,10 +76,10 @@ pub struct TopicSeal {
     pub file: SourcePath,
     /// [`topic_hash`](super::topic_hash) of the topic text when sealed.
     pub topic_hash: Fingerprint,
-    /// Who reviewed the seal. Opaque to sealmap: reviewer policy belongs to
-    /// the calling skill.
+    /// The reviewer's `host:model` route. `sign` guarantees a different model
+    /// family from `model`; reading a lock does not re-check it.
     pub reviewer: String,
-    /// The model that wrote the topic. Opaque, like `reviewer`.
+    /// The `host:model` route of the model that wrote the topic.
     pub model: String,
     /// Seal date, `YYYY-MM-DD`.
     pub date: String,

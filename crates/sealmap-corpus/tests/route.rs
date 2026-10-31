@@ -80,17 +80,27 @@ fn an_unknown_family_is_refused_on_either_side() {
 
 const DEFAULT: &str = "loom:qwen3.8-27B -> claude:claude-sonnet-5-5";
 
+const POLISH: &str = r#"{"version":1,"corpora":{"sealmap":{"diagram-polish":"claude:claude-sonnet-5-5"}}}"#;
+
 #[test]
-fn a_recorded_corpus_starts_from_its_confirmed_route() {
-    let t = Tiers::parse(r#"{"version":1,"corpora":{"sealmap":{"route":"claude:claude-sonnet-5-5"}}}"#).unwrap();
-    assert_eq!(t.start_route("sealmap", DEFAULT).unwrap(), "claude:claude-sonnet-5-5");
+fn a_recorded_activity_starts_from_its_confirmed_route() {
+    let t = Tiers::parse(POLISH).unwrap();
+    assert_eq!(t.start_route("sealmap", "diagram-polish", DEFAULT).unwrap(), "claude:claude-sonnet-5-5");
+}
+
+#[test]
+fn a_record_for_one_activity_or_corpus_does_not_move_another() {
+    let t = Tiers::parse(POLISH).unwrap();
+    assert_eq!(t.start_route("sealmap", "diagram-synthesis", DEFAULT).unwrap(), DEFAULT);
+    assert_eq!(t.start_route("other", "diagram-polish", DEFAULT).unwrap(), DEFAULT);
 }
 
 #[test]
 fn an_unrecorded_corpus_or_an_absent_file_falls_back_to_the_default() {
     let t = Tiers::parse(r#"{"version":1,"corpora":{}}"#).unwrap();
-    assert_eq!(t.start_route("sealmap", DEFAULT).unwrap(), DEFAULT);
-    assert_eq!(Tiers::from_file_text(None).unwrap().start_route("sealmap", DEFAULT).unwrap(), DEFAULT);
+    assert_eq!(t.start_route("sealmap", "diagram-polish", DEFAULT).unwrap(), DEFAULT);
+    let none = Tiers::from_file_text(None).unwrap();
+    assert_eq!(none.start_route("sealmap", "diagram-polish", DEFAULT).unwrap(), DEFAULT);
 }
 
 #[test]
@@ -101,9 +111,10 @@ fn a_malformed_file_is_an_error_never_a_silent_default() {
         "[]",
         r#"{"version":2,"corpora":{}}"#,
         r#"{"corpora":{}}"#,
-        r#"{"version":1,"corpora":{"a":{}}}"#,
-        r#"{"version":1,"corpora":{"a":{"route":"gemini:x"}}}"#,
-        r#"{"version":1,"corpora":{"a":{"route":"claude:x","extra":1}}}"#,
+        r#"{"version":1,"corpora":{"a":{"diagram-polish":1}}}"#,
+        r#"{"version":1,"corpora":{"a":{"diagram-polish":"gemini:x"}}}"#,
+        r#"{"version":1,"corpora":{"a":"claude:x"}}"#,
+        r#"{"version":1,"corpora":{},"extra":1}"#,
     ] {
         let err = Tiers::from_file_text(Some(bad)).unwrap_err();
         assert!(matches!(err, TierError::Malformed(_)), "{bad:?}: {err}");
@@ -113,5 +124,5 @@ fn a_malformed_file_is_an_error_never_a_silent_default() {
 #[test]
 fn a_bad_default_route_is_an_error() {
     let t = Tiers::from_file_text(None).unwrap();
-    assert!(t.start_route("sealmap", "nonsense").is_err());
+    assert!(t.start_route("sealmap", "diagram-polish", "nonsense").is_err());
 }

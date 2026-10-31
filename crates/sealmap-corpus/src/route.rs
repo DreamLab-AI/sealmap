@@ -29,6 +29,7 @@ use std::fmt;
 
 /// A model family: who trained the model, hence whose mistakes it shares.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
 pub enum Family {
     /// Claude models.
     Anthropic,
@@ -53,6 +54,7 @@ impl fmt::Display for Family {
 
 /// Why a route was refused.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum RouteError {
     /// The text is not `host:model` or `host:model -> host:model`.
     #[error(

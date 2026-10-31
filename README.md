@@ -353,12 +353,12 @@ A diagrams-only `--review` mode is designed but not built
 - **It enforces one reviewer rule.** `seal sign` takes `host:model` routes
   (`claude`, `codex`, `loom`, `zai`) and refuses, with exit status 1, a
   reviewer in the same model family as the author or in an unknown family
-  (agentbox ADR-2130). Families: `claude` is anthropic; `gpt`/`codex` openai;
+  (agentbox ADR-2130). Families: `claude` is anthropic; `gpt`/`codex`/`o1`..`o9` openai;
   `glm`/`zai` zhipu; `qwen` alibaba; a `loom` route takes the family of the
   model behind it. Everything else about reviewers (evidence, what to review)
   stays in the skill layer. `tiers::Tiers` reads `docs/diagrams/.tiers.json`
-  (`{"version":1,"corpora":{"<corpus>":{"route":"host:model"}}}`) for the
-  route a corpus starts from.
+  (`{"version":1,"corpora":{"<corpus>":{"<activity>":"host:route"}}}`) for the
+  route an activity starts from on a corpus.
 
 ## Status and roadmap
 

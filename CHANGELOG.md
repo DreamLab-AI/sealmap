@@ -12,11 +12,14 @@ All crates in this workspace share one version.
 - `route` module: the manifest route grammar (`host:model [-> host:model]`,
   hosts `claude`, `codex`, `loom`, `zai`), `Family`, and `cross_family`.
 - `tiers` module: a strict reader for `docs/diagrams/.tiers.json`
-  (confirmed per-corpus de-escalations), with `start_route` falling back to
-  the route default when a corpus has no record. A malformed file is an
+  (confirmed de-escalations, per corpus and per activity), with
+  `start_route(corpus, activity, default)` falling back to the route default
+  when there is no record. A malformed file is an
   error. It reads only; the measured descent is not part of sealmap.
 
 ### Changed
+- Adds `SignError::Family` to an exhaustive enum, so the next release is
+  0.3.0, not 0.2.x.
 - Seals signed with opaque reviewer or model strings are now refused. Existing
   locks still verify: only the write path applies the policy.
 

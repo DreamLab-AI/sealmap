@@ -8,7 +8,7 @@
 //! sealmap verify                                    # the seal gate over docs/diagrams (CI)
 //! sealmap seal-check CP-03 CP-07                    # classify chosen lock entries
 //! sealmap stale [--since main]                      # sealed symbols that changed; exit 0
-//! sealmap seal sign CP-03 --reviewer R --model M    # write a seal
+//! sealmap seal sign CP-03 --reviewer zai:glm-5.3 --model claude:claude-sonnet-5-5   # write a seal (different families)
 //! sealmap pack CP-03 CP-07 --budget 200000          # a review pack on stdout
 //! sealmap pack --diff main --budget 200000 --shard -o packs/   # changed topics, sharded
 //! ```

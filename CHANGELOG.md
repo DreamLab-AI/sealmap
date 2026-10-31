@@ -2,7 +2,7 @@
 
 All crates in this workspace share one version.
 
-## Unreleased
+## 0.3.0 — 2026-10-31
 
 ### Added
 - `seal::sign` (and so `sealmap seal sign`) refuses a seal review whose

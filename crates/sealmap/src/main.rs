@@ -235,10 +235,10 @@ struct PackArgs {
 struct Sign {
     /// Topic id (`COR-04`) or topic file path.
     topic: String,
-    /// Reviewer recorded in the seal (opaque).
+    /// Reviewer route recorded in the seal (`host:model`; must differ in family from --model).
     #[arg(long)]
     reviewer: String,
-    /// Model recorded in the seal (opaque).
+    /// Authoring model route recorded in the seal (`host:model`).
     #[arg(long)]
     model: String,
     /// Seal date, YYYY-MM-DD (default: today, UTC).

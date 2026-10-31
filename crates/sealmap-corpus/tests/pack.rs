@@ -270,7 +270,11 @@ fn changed_topics_follow_sealed_and_cited_symbols() {
     // A sealed topic whose sealed symbols changed counts even when the
     // change is to a symbol it no longer cites: the lock is consulted too.
     let mut lock = Lock::new();
-    let who = Signature { reviewer: "r".into(), model: "m".into(), date: "2026-10-06".into() };
+    let who = Signature {
+        reviewer: "zai:glm-5.3".into(),
+        model: "claude:claude-sonnet-5-5".into(),
+        date: "2026-10-06".into(),
+    };
     let file = SourcePath::new("ledger/03-trail.md").unwrap();
     let sealed = "---\nid: LED-03\n---\nThe trail is `sym:cargo ledger . audit/Trail#record().`.\n";
     sign(&mut lock, &file, sealed, &before, "seals.lock", &who).unwrap();

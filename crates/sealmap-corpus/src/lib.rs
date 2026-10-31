@@ -95,9 +95,11 @@ mod index;
 mod naming;
 mod overview;
 pub mod pack;
+pub mod route;
 pub mod seal;
 mod sequence;
 mod structure;
+pub mod tiers;
 
 use std::collections::BTreeMap;
 

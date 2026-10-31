@@ -110,7 +110,7 @@ fn id(s: &str) -> SymbolId {
 }
 
 fn who() -> Signature {
-    Signature { reviewer: "zai:glm-5.3".into(), model: "claude:claude-sonnet-5".into(), date: "2026-10-05".into() }
+    Signature { reviewer: "zai:glm-5.3".into(), model: "claude:claude-sonnet-5-5".into(), date: "2026-10-05".into() }
 }
 
 /// Sign both topics against `codebase`; returns the lock text and topics.
@@ -537,6 +537,25 @@ fn sign_refuses_what_verify_could_not_confirm() {
     seal::sign(&mut lock, &file, TOPIC, &cb, seal::LOCK_FILE, &who()).unwrap();
     let err = seal::sign(&mut lock, &path("ledger/09-copy.md"), TOPIC, &cb, seal::LOCK_FILE, &who()).unwrap_err();
     assert!(matches!(err, seal::SignError::IdTaken { .. }), "{err}");
+}
+
+#[test]
+fn sign_refuses_a_same_family_or_unknown_family_review() {
+    let cb = base();
+    let file = path("ledger/01-posting.md");
+    let same =
+        Signature { reviewer: "claude:claude-fable-5-1".into(), model: "claude:claude-sonnet-5-5".into(), ..who() };
+    let mut lock = Lock::new();
+    let err = seal::sign(&mut lock, &file, TOPIC, &cb, seal::LOCK_FILE, &same).unwrap_err();
+    assert!(matches!(err, seal::SignError::Family(_)), "{err}");
+    assert!(err.to_string().contains("same model family"), "{err}");
+    assert!(lock.topics.is_empty(), "a refused seal writes nothing");
+    let unknown = Signature { reviewer: "r".into(), model: "m".into(), ..who() };
+    assert!(matches!(
+        seal::sign(&mut lock, &file, TOPIC, &cb, seal::LOCK_FILE, &unknown).unwrap_err(),
+        seal::SignError::Family(_)
+    ));
+    assert!(lock.topics.is_empty());
 }
 
 #[test]

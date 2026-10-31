@@ -138,7 +138,7 @@ classifies each sealed symbol. It works as specified, but a symbol whose body
 hash holds can still have changed in a way that makes the topic wrong: the
 seal rule caught 0.76 of real staleness in E0d. Treat `holds` as "no cited
 body changed", never as "the topic is still true". The lock is canonical
-TOML that `verify` byte-checks; reviewer and model are opaque strings.
+TOML that `verify` byte-checks; reviewer and model are `host:model` routes of different families.
 
 | Condition | Class | CI |
 |---|---|---|
@@ -153,7 +153,7 @@ TOML that `verify` byte-checks; reviewer and model are opaque strings.
 | `sealed:` pointer and lock disagree, or the lock is not canonical | `lock-fault` | fail |
 
 ```console
-$ sealmap seal sign LED-01 --reviewer zai:glm-5.3 --model claude:sonnet
+$ sealmap seal sign LED-01 --reviewer zai:glm-5.3 --model claude:claude-sonnet-5-5
 sealmap: sealed LED-01 (ledger/01-accounts.md) with 1 symbol(s) into ./docs/diagrams/seals.lock
 $ sealmap verify
 behaviour         LED-01   sym:cargo ledger . accounts/LedgerAccount#deposit(). body blake3-16:… -> blake3-16:… (src/accounts.rs:4-6)
@@ -278,7 +278,7 @@ sealmap generate --repo api=../api --repo core=../core -o .sealmap
 
 # Experimental, not for corpus upkeep: seals over docs/diagrams/ (lock: docs/diagrams/seals.lock; -C ROOT, --diagrams DIR, --json)
 sealmap resolve 'sym:cargo my_crate . net/Client#connect().'   # span + hashes, or absent + rename candidates
-sealmap seal sign CP-03 --reviewer zai:glm-5.3 --model claude:sonnet   # seal a topic from the current code
+sealmap seal sign CP-03 --reviewer zai:glm-5.3 --model claude:claude-sonnet-5-5   # seal a topic from the current code
 sealmap verify                                               # the CI gate: exit 1 unless everything holds
 sealmap seal-check CP-03 CP-07                               # classify chosen lock entries
 sealmap stale --since main                                   # sealed symbols changed since a revision; misses real changes (E0d)
@@ -350,8 +350,15 @@ A diagrams-only `--review` mode is designed but not built
   and `pack --diff`, and to `git` for a pack's revision line.
 - **It does not tell you a diagram is still true.** No staleness rule we
   measured below per-file kept recall; that judgement stays with a reviewer.
-- **It knows nothing about reviewers.** The lock holds opaque strings, and
-  reviewer policy (cross-family review, evidence) lives in the skill layer.
+- **It enforces one reviewer rule.** `seal sign` takes `host:model` routes
+  (`claude`, `codex`, `loom`, `zai`) and refuses, with exit status 1, a
+  reviewer in the same model family as the author or in an unknown family
+  (agentbox ADR-2130). Families: `claude` is anthropic; `gpt`/`codex` openai;
+  `glm`/`zai` zhipu; `qwen` alibaba; a `loom` route takes the family of the
+  model behind it. Everything else about reviewers (evidence, what to review)
+  stays in the skill layer. `tiers::Tiers` reads `docs/diagrams/.tiers.json`
+  (`{"version":1,"corpora":{"<corpus>":{"route":"host:model"}}}`) for the
+  route a corpus starts from.
 
 ## Status and roadmap
 

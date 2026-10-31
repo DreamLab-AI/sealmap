@@ -8,13 +8,14 @@ use super::check::{Resolution, resolve};
 use super::lock::{GENERATOR, Lock, SymbolSeal, TopicSeal, is_date};
 use super::topic::{citations, topic_hash, topic_id, with_pointer};
 
-/// Who and when, for [`sign`]. All three are recorded as given; sealmap
-/// applies no policy to `reviewer` or `model`.
+/// Who and when, for [`sign`]. All three are recorded as given. `reviewer`
+/// and `model` are `host:model` routes (see [`route`](crate::route)); `sign`
+/// refuses a pair that shares a model family or whose family is unknown.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signature {
-    /// The reviewer who checked the topic against the code.
+    /// The route of the reviewer who checked the topic against the code.
     pub reviewer: String,
-    /// The model that wrote the topic.
+    /// The route of the model that wrote the topic.
     pub model: String,
     /// The seal date, `YYYY-MM-DD`.
     pub date: String,
@@ -59,6 +60,10 @@ pub enum SignError {
     /// `reviewer` or `model` is empty, or `date` is not `YYYY-MM-DD`.
     #[error("{0}")]
     BadSignature(String),
+    /// The reviewer shares the author's model family, or a family is
+    /// unknown (ADR-2130). Nothing is sealed.
+    #[error("{0}")]
+    Family(#[from] crate::route::RouteError),
 }
 
 /// Seal the topic at `file` (relative to the lock's directory) with text
@@ -73,7 +78,8 @@ pub enum SignError {
 /// `body_hash`, and the [`topic_hash`](super::topic_hash) of the text. A
 /// citation that does not parse, is not in the model, may sit in an
 /// unparsable file, or has no fingerprints is refused: nothing is sealed
-/// that `verify` could not then confirm. Signing records `lock.generator`
+/// that `verify` could not then confirm. The reviewer must be a different
+/// model family from `who.model`, else [`SignError::Family`]. Signing records `lock.generator`
 /// as this build.
 ///
 /// ```
@@ -87,7 +93,7 @@ pub enum SignError {
 ///
 /// let file = sealmap_model::SourcePath::new("core/01-ledger.md").unwrap();
 /// let topic = "---\nid: CORE-01\n---\nPosting is `sym:cargo books . Ledger#post().`.\n";
-/// let who = Signature { reviewer: "r".into(), model: "m".into(), date: "2026-10-05".into() };
+/// let who = Signature { reviewer: "zai:glm-5.3".into(), model: "claude:claude-sonnet-5-5".into(), date: "2026-10-05".into() };
 ///
 /// let mut lock = Lock::new();
 /// let sealed_text = sign(&mut lock, &file, topic, &model, "seals.lock", &who).unwrap();
@@ -110,6 +116,7 @@ pub fn sign(
     if !is_date(&who.date) {
         return Err(SignError::BadSignature(format!("date `{}` is not YYYY-MM-DD", who.date)));
     }
+    crate::route::cross_family(&who.model, &who.reviewer)?;
     let id = topic_id(text).ok_or_else(|| SignError::NoTopicId(file.clone()))?;
     if !super::lock::is_topic_id(&id) {
         return Err(SignError::BadTopicId(file.clone(), id));

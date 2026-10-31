@@ -55,7 +55,17 @@ fn edit(dir: &Path, file: &str, from: &str, to: &str) {
 fn sign(dir: &Path) {
     let o = sealmap(
         dir,
-        &["seal", "sign", "LED-01", "--reviewer", "zai:glm-5.3", "--model", "claude:sonnet", "--date", "2026-10-05"],
+        &[
+            "seal",
+            "sign",
+            "LED-01",
+            "--reviewer",
+            "zai:glm-5.3",
+            "--model",
+            "claude:claude-sonnet-5-5",
+            "--date",
+            "2026-10-05",
+        ],
     );
     assert_eq!(code(&o), 0, "{}", String::from_utf8_lossy(&o.stderr));
 }
@@ -305,4 +315,17 @@ fn repos_with_clashing_names_are_refused() {
     // Distinct names load both.
     let both = sealmap::load_repos(&[("api", a.as_path()), ("web", b.as_path())]).unwrap();
     assert!(both.get_str("api/src/accounts.rs").is_some() && both.get_str("web/src/accounts.rs").is_some());
+}
+
+#[test]
+fn sign_refuses_a_same_family_review_and_writes_nothing() {
+    let dir = scratch("sign-same-family");
+    let o = sealmap(
+        &dir,
+        &["seal", "sign", "LED-01", "--reviewer", "claude:claude-fable-5-1", "--model", "claude:claude-sonnet-5-5"],
+    );
+    assert_eq!(code(&o), 1);
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(err.contains("same model family (anthropic)"), "{err}");
+    assert!(!dir.join("docs/diagrams/seals.lock").exists());
 }

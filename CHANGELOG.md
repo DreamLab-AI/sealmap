@@ -4,6 +4,30 @@ All crates in this workspace share one version.
 
 ## Unreleased
 
+### Added
+- `seal::sign` (and so `sealmap seal sign`) refuses a seal review whose
+  reviewer shares a model family with the author, or whose family is unknown,
+  with `SignError::Family` and exit status 1; nothing is written (agentbox
+  ADR-2130). `--reviewer` must be exactly one `host:model` (the model that gave the verdict;
+  a multi-rung route is refused with exit 1 and nothing is written); `--model`
+  is `host:model` or `a -> b` when an escalation ran, and every author rung is
+  checked against the reviewer. The family of a `loom` route comes from its
+  model id and is not verified against what the Loom serves.
+- `route` module: the manifest route grammar (`host:model [-> host:model]`,
+  hosts `claude`, `codex`, `loom`, `zai`), `Family`, and `cross_family`.
+- `tiers` module: a strict reader for `docs/diagrams/.tiers.json`
+  (confirmed de-escalations, per corpus and per activity), with
+  `start_route(corpus, activity, default)` falling back to the route default
+  when there is no record. A malformed file, a duplicated key or an
+  activity other than `diagram-polish`, `diagram-narrative`,
+  `diagram-synthesis` or `seal-review` is an error. It reads only; the measured descent is not part of sealmap.
+
+### Changed
+- Adds `SignError::Family` to an exhaustive enum, so the next release is
+  0.3.0, not 0.2.x.
+- Seals signed with opaque reviewer or model strings are now refused. Existing
+  locks still verify: only the write path applies the policy.
+
 ### Docs
 - The README positions sealmap as a deterministic code lens for Rust
   (extraction, generated views, `dense`, `pack`) and adds "What the evidence

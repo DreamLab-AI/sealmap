@@ -103,13 +103,19 @@ generator = "sealmap 0.2.0"
 id = "CP-03"
 file = "control-plane/03-the-scr-executor.md"
 topic_hash = "blake3-16:…"     # binds the prose: an unreviewed edit fails verify
-reviewer = "zai:glm-5.3"       # opaque to the crate
+reviewer = "zai:glm-5.3"       # exactly one host:model, the verdict-giver; sign refuses the author's family (ADR-2130)
 model = "claude:claude-sonnet-5"
 date = "2026-10-05"
 symbols = [
   { id = "sym:npm control-plane . scr/executor/execute().", sig = "…", body = "…" },
 ]
 ```
+
+`sign` takes `--reviewer` as one `host:model` (a multi-rung route is refused,
+exit 1, nothing written); `--model` may be an `a -> b` route when an escalation
+ran, and the reviewer's family is compared with every author rung. The family
+of a `loom` route comes from the route's model id and is not checked against
+what the Loom serves.
 
 As built (`sealmap_corpus::seal`): the canonical form above is exact, with
 `symbols` one inline table per line in id order (`symbols = []` when empty),

@@ -8,7 +8,7 @@
 //! sealmap verify                                    # the seal gate over docs/diagrams (CI)
 //! sealmap seal-check CP-03 CP-07                    # classify chosen lock entries
 //! sealmap stale [--since main]                      # sealed symbols that changed; exit 0
-//! sealmap seal sign CP-03 --reviewer R --model M    # write a seal
+//! sealmap seal sign CP-03 --reviewer zai:glm-5.3 --model claude:claude-sonnet-5-5   # write a seal (different families)
 //! sealmap pack CP-03 CP-07 --budget 200000          # a review pack on stdout
 //! sealmap pack --diff main --budget 200000 --shard -o packs/   # changed topics, sharded
 //! ```
@@ -235,10 +235,10 @@ struct PackArgs {
 struct Sign {
     /// Topic id (`COR-04`) or topic file path.
     topic: String,
-    /// Reviewer recorded in the seal (opaque).
+    /// The one reviewer recorded in the seal (a single `host:model`, the model that gave the verdict; a multi-rung route is refused; must differ in family from --model).
     #[arg(long)]
     reviewer: String,
-    /// Model recorded in the seal (opaque).
+    /// Authoring model recorded in the seal (`host:model`, or `a -> b` if an escalation ran).
     #[arg(long)]
     model: String,
     /// Seal date, YYYY-MM-DD (default: today, UTC).

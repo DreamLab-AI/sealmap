@@ -110,7 +110,7 @@ fn id(s: &str) -> SymbolId {
 }
 
 fn who() -> Signature {
-    Signature { reviewer: "zai:glm-5.3".into(), model: "claude:claude-sonnet-5".into(), date: "2026-10-05".into() }
+    Signature { reviewer: "zai:glm-5.3".into(), model: "claude:claude-sonnet-5-5".into(), date: "2026-10-05".into() }
 }
 
 /// Sign both topics against `codebase`; returns the lock text and topics.
@@ -540,6 +540,25 @@ fn sign_refuses_what_verify_could_not_confirm() {
 }
 
 #[test]
+fn sign_refuses_a_same_family_or_unknown_family_review() {
+    let cb = base();
+    let file = path("ledger/01-posting.md");
+    let same =
+        Signature { reviewer: "claude:claude-fable-5-1".into(), model: "claude:claude-sonnet-5-5".into(), ..who() };
+    let mut lock = Lock::new();
+    let err = seal::sign(&mut lock, &file, TOPIC, &cb, seal::LOCK_FILE, &same).unwrap_err();
+    assert!(matches!(err, seal::SignError::Family(_)), "{err}");
+    assert!(err.to_string().contains("same model family"), "{err}");
+    assert!(lock.topics.is_empty(), "a refused seal writes nothing");
+    let unknown = Signature { reviewer: "r".into(), model: "m".into(), ..who() };
+    assert!(matches!(
+        seal::sign(&mut lock, &file, TOPIC, &cb, seal::LOCK_FILE, &unknown).unwrap_err(),
+        seal::SignError::Family(_)
+    ));
+    assert!(lock.topics.is_empty());
+}
+
+#[test]
 fn re_signing_replaces_the_entry_and_follows_a_renumbered_topic() {
     let cb = base();
     let file = path("ledger/01-posting.md");
@@ -602,4 +621,39 @@ fn the_empty_lock_is_canonical() {
     let text = Lock::new().to_toml();
     assert_eq!(text, format!("version = 1\nalgorithm = \"sm1\"\ngenerator = \"{}\"\n", seal::GENERATOR));
     assert_eq!(Lock::parse_canonical(&text).unwrap(), Lock::new());
+}
+
+#[test]
+fn sign_refuses_a_multi_rung_reviewer_and_writes_nothing() {
+    let cb = base();
+    let file = path("ledger/01-posting.md");
+    let multi = Signature {
+        reviewer: "zai:glm-5.3 -> claude:claude-fable-5-1".into(),
+        model: "claude:claude-sonnet-5-5".into(),
+        ..who()
+    };
+    let mut lock = Lock::new();
+    let err = seal::sign(&mut lock, &file, TOPIC, &cb, seal::LOCK_FILE, &multi).unwrap_err();
+    assert!(matches!(err, seal::SignError::BadSignature(_)), "{err}");
+    assert!(err.to_string().contains("exactly one"), "{err}");
+    assert!(lock.topics.is_empty(), "a refused seal writes nothing");
+}
+
+/// The three `diagram-*` author routes, verbatim from agentbox.toml
+/// `[model_routing.routes]`. The single reviewer that gave the verdict
+/// (`zai:glm-5.3`) must pass against every rung of each.
+#[test]
+fn the_single_glm_reviewer_passes_against_each_agentbox_diagram_author_route() {
+    let cb = base();
+    let file = path("ledger/01-posting.md");
+    for author in [
+        "loom:qwen3.8-27B -> claude:claude-sonnet-5-5",
+        "claude:claude-sonnet-5-5 -> claude:claude-opus-5-5",
+        "claude:claude-opus-5-5 -> claude:claude-fable-5-1",
+    ] {
+        let sig = Signature { reviewer: "zai:glm-5.3".into(), model: author.into(), ..who() };
+        let mut lock = Lock::new();
+        seal::sign(&mut lock, &file, TOPIC, &cb, seal::LOCK_FILE, &sig).unwrap_or_else(|e| panic!("{author}: {e}"));
+        assert_eq!(lock.topics.len(), 1);
+    }
 }

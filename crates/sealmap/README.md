@@ -105,7 +105,7 @@ let model = |body: &str| {
 };
 let file = SourcePath::new("store/01-db.md").unwrap();
 let topic = "---\nid: ST-01\n---\nReads go through `sym:cargo shop . Db#get().`.\n";
-let who = Signature { reviewer: "r".into(), model: "m".into(), date: "2026-10-05".into() };
+let who = Signature { reviewer: "zai:glm-5.3".into(), model: "claude:claude-sonnet-5-5".into(), date: "2026-10-05".into() };
 
 let mut lock = Lock::new();
 let sealed = seal::sign(&mut lock, &file, topic, &model("1"), seal::LOCK_FILE, &who).unwrap();

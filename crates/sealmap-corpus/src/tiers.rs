@@ -16,13 +16,16 @@
 //! of ADR-2130, which fixes the file's name and its stickiness but not its
 //! layout.
 //!
-//! The schema is version 1, strict: unknown keys, a wrong version or a route
-//! outside the manifest grammar are errors. An absent file means "no
+//! The schema is version 1, strict: unknown keys, a duplicated key, an
+//! activity outside [`ACTIVITIES`], a wrong version or a route outside the
+//! manifest grammar are errors. An absent file means "no
 //! records"; a present but malformed one is never read as empty.
 
 use std::collections::BTreeMap;
+use std::fmt;
 
 use serde::Deserialize;
+use serde::de::{self, Deserializer, MapAccess, Visitor};
 
 use crate::route::{Route, RouteError};
 
@@ -38,11 +41,42 @@ pub enum TierError {
     Route(#[from] RouteError),
 }
 
+/// The activities ADR-2130 routes. A record for any other name is refused.
+pub const ACTIVITIES: [&str; 4] = ["diagram-polish", "diagram-narrative", "diagram-synthesis", "seal-review"];
+
+/// A JSON object read into a map that refuses a repeated key (serde's
+/// `BTreeMap` keeps the last one silently).
+#[derive(Debug)]
+struct Unique<V>(BTreeMap<String, V>);
+
+impl<'de, V: Deserialize<'de>> Deserialize<'de> for Unique<V> {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct Walk<V>(std::marker::PhantomData<V>);
+        impl<'de, V: Deserialize<'de>> Visitor<'de> for Walk<V> {
+            type Value = Unique<V>;
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("an object")
+            }
+            fn visit_map<A: MapAccess<'de>>(self, mut m: A) -> Result<Self::Value, A::Error> {
+                let mut out = BTreeMap::new();
+                while let Some((k, v)) = m.next_entry::<String, V>()? {
+                    if out.contains_key(&k) {
+                        return Err(de::Error::custom(format!("duplicate key `{k}`")));
+                    }
+                    out.insert(k, v);
+                }
+                Ok(Unique(out))
+            }
+        }
+        d.deserialize_map(Walk(std::marker::PhantomData))
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct File {
     version: u32,
-    corpora: BTreeMap<String, BTreeMap<String, String>>,
+    corpora: Unique<Unique<String>>,
 }
 
 /// The confirmed de-escalations, per corpus.
@@ -67,8 +101,14 @@ impl Tiers {
             return Err(TierError::Malformed(format!("version {} is not supported (expected 1)", file.version)));
         }
         let mut corpora = BTreeMap::new();
-        for (name, activities) in file.corpora {
-            for (activity, route) in activities {
+        for (name, activities) in file.corpora.0 {
+            for (activity, route) in activities.0 {
+                if !ACTIVITIES.contains(&activity.as_str()) {
+                    return Err(TierError::Malformed(format!(
+                        "corpus `{name}`: unknown activity `{activity}` (expected one of {})",
+                        ACTIVITIES.join(", ")
+                    )));
+                }
                 Route::parse(&route)
                     .map_err(|e| TierError::Malformed(format!("corpus `{name}`, activity `{activity}`: {e}")))?;
                 corpora.insert((name.clone(), activity), route.trim().to_owned());

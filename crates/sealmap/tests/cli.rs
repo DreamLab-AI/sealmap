@@ -329,3 +329,24 @@ fn sign_refuses_a_same_family_review_and_writes_nothing() {
     assert!(err.contains("same model family (anthropic)"), "{err}");
     assert!(!dir.join("docs/diagrams/seals.lock").exists());
 }
+
+#[test]
+fn sign_refuses_a_multi_rung_reviewer_and_writes_nothing() {
+    let dir = scratch("sign-multi-reviewer");
+    let o = sealmap(
+        &dir,
+        &[
+            "seal",
+            "sign",
+            "LED-01",
+            "--reviewer",
+            "zai:glm-5.3 -> claude:claude-fable-5-1",
+            "--model",
+            "claude:claude-sonnet-5-5",
+        ],
+    );
+    assert_eq!(code(&o), 1);
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(err.contains("exactly one"), "{err}");
+    assert!(!dir.join("docs/diagrams/seals.lock").exists());
+}

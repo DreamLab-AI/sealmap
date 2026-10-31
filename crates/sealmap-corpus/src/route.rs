@@ -23,6 +23,10 @@
 //! behind the Loom is swappable: its family is that of the model id, and an
 //! id this table does not know is an unknown family. Unknown families are
 //! refused, never passed: the check fails closed.
+//!
+//! A loom family is read from the route's model id as declared. It is not
+//! checked against what the Loom actually serves, so callers should pass the
+//! model id the Loom reported.
 
 use std::collections::BTreeSet;
 use std::fmt;

@@ -138,7 +138,7 @@ classifies each sealed symbol. It works as specified, but a symbol whose body
 hash holds can still have changed in a way that makes the topic wrong: the
 seal rule caught 0.76 of real staleness in E0d. Treat `holds` as "no cited
 body changed", never as "the topic is still true". The lock is canonical
-TOML that `verify` byte-checks; reviewer and model are `host:model` routes of different families.
+TOML that `verify` byte-checks; `--reviewer` is the single `host:model` that gave the verdict and `--model` the rung(s) that wrote the text; they must be of different families.
 
 | Condition | Class | CI |
 |---|---|---|
@@ -350,14 +350,16 @@ A diagrams-only `--review` mode is designed but not built
   and `pack --diff`, and to `git` for a pack's revision line.
 - **It does not tell you a diagram is still true.** No staleness rule we
   measured below per-file kept recall; that judgement stays with a reviewer.
-- **It enforces one reviewer rule.** `seal sign` takes `host:model` routes
-  (`claude`, `codex`, `loom`, `zai`) and refuses, with exit status 1, a
-  reviewer in the same model family as the author or in an unknown family
+- **It enforces one reviewer rule.** `seal sign` takes exactly one
+  `host:model` as `--reviewer` (a multi-rung route is refused) and the
+  authoring `host:model`, or `a -> b` if an escalation ran, as `--model`
+  (hosts `claude`, `codex`, `loom`, `zai`). It refuses, with exit status 1, a
+  reviewer in the same model family as any author rung or in an unknown family
   (agentbox ADR-2130). Families: `claude` is anthropic; `gpt`/`codex`/`o1`..`o9` openai;
-  `glm`/`zai` zhipu; `qwen` alibaba; a `loom` route takes the family of the
-  model behind it. Everything else about reviewers (evidence, what to review)
+  `glm`/`zai` zhipu; `qwen` alibaba; a `loom` route takes the family of its model id as
+  declared (not verified against what the Loom serves). Everything else about reviewers (evidence, what to review)
   stays in the skill layer. `tiers::Tiers` reads `docs/diagrams/.tiers.json`
-  (`{"version":1,"corpora":{"<corpus>":{"<activity>":"host:route"}}}`) for the
+  (`{"version":1,"corpora":{"<corpus>":{"<activity>":"host:route"}}}`; a duplicate key or an activity other than the four ADR-2130 names is an error) for the
   route an activity starts from on a corpus.
 
 ## Status and roadmap

@@ -622,3 +622,38 @@ fn the_empty_lock_is_canonical() {
     assert_eq!(text, format!("version = 1\nalgorithm = \"sm1\"\ngenerator = \"{}\"\n", seal::GENERATOR));
     assert_eq!(Lock::parse_canonical(&text).unwrap(), Lock::new());
 }
+
+#[test]
+fn sign_refuses_a_multi_rung_reviewer_and_writes_nothing() {
+    let cb = base();
+    let file = path("ledger/01-posting.md");
+    let multi = Signature {
+        reviewer: "zai:glm-5.3 -> claude:claude-fable-5-1".into(),
+        model: "claude:claude-sonnet-5-5".into(),
+        ..who()
+    };
+    let mut lock = Lock::new();
+    let err = seal::sign(&mut lock, &file, TOPIC, &cb, seal::LOCK_FILE, &multi).unwrap_err();
+    assert!(matches!(err, seal::SignError::BadSignature(_)), "{err}");
+    assert!(err.to_string().contains("exactly one"), "{err}");
+    assert!(lock.topics.is_empty(), "a refused seal writes nothing");
+}
+
+/// The three `diagram-*` author routes, verbatim from agentbox.toml
+/// `[model_routing.routes]`. The single reviewer that gave the verdict
+/// (`zai:glm-5.3`) must pass against every rung of each.
+#[test]
+fn the_single_glm_reviewer_passes_against_each_agentbox_diagram_author_route() {
+    let cb = base();
+    let file = path("ledger/01-posting.md");
+    for author in [
+        "loom:qwen3.8-27B -> claude:claude-sonnet-5-5",
+        "claude:claude-sonnet-5-5 -> claude:claude-opus-5-5",
+        "claude:claude-opus-5-5 -> claude:claude-fable-5-1",
+    ] {
+        let sig = Signature { reviewer: "zai:glm-5.3".into(), model: author.into(), ..who() };
+        let mut lock = Lock::new();
+        seal::sign(&mut lock, &file, TOPIC, &cb, seal::LOCK_FILE, &sig).unwrap_or_else(|e| panic!("{author}: {e}"));
+        assert_eq!(lock.topics.len(), 1);
+    }
+}

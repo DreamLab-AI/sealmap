@@ -126,3 +126,36 @@ fn a_bad_default_route_is_an_error() {
     let t = Tiers::from_file_text(None).unwrap();
     assert!(t.start_route("sealmap", "diagram-polish", "nonsense").is_err());
 }
+
+#[test]
+fn a_duplicate_key_is_an_error_not_last_one_wins() {
+    for dup in [
+        r#"{"version":1,"corpora":{"c":{"diagram-polish":"claude:claude-sonnet-5-5","diagram-polish":"loom:qwen3.8-27B"}}}"#,
+        r#"{"version":1,"corpora":{"c":{"diagram-polish":"claude:claude-sonnet-5-5"},"c":{"diagram-synthesis":"claude:claude-opus-5-5"}}}"#,
+    ] {
+        let err = Tiers::parse(dup).unwrap_err();
+        assert!(matches!(err, TierError::Malformed(_)), "{dup}: {err}");
+        assert!(err.to_string().contains("duplicate"), "{err}");
+    }
+}
+
+#[test]
+fn an_unknown_activity_is_an_error_not_a_silently_lost_record() {
+    let err =
+        Tiers::parse(r#"{"version":1,"corpora":{"c":{"diagram-polsh":"claude:claude-sonnet-5-5"}}}"#).unwrap_err();
+    assert!(matches!(err, TierError::Malformed(_)), "{err}");
+    assert!(err.to_string().contains("diagram-polsh"), "{err}");
+}
+
+#[test]
+fn every_known_activity_is_accepted() {
+    for a in ["diagram-polish", "diagram-narrative", "diagram-synthesis", "seal-review"] {
+        let text = format!(r#"{{"version":1,"corpora":{{"c":{{"{a}":"claude:claude-sonnet-5-5"}}}}}}"#);
+        Tiers::parse(&text).unwrap_or_else(|e| panic!("{a}: {e}"));
+    }
+}
+
+#[test]
+fn an_unknown_loom_model_still_fails_closed() {
+    assert!(sealmap_corpus::route::cross_family("claude:claude-sonnet-5-5", "loom:hemmingway-1.5-q8_0").is_err());
+}

@@ -9,13 +9,16 @@ use super::lock::{GENERATOR, Lock, SymbolSeal, TopicSeal, is_date};
 use super::topic::{citations, topic_hash, topic_id, with_pointer};
 
 /// Who and when, for [`sign`]. All three are recorded as given. `reviewer`
-/// and `model` are `host:model` routes (see [`route`](crate::route)); `sign`
-/// refuses a pair that shares a model family or whose family is unknown.
+/// is exactly one `host:model` rung, the one that gave the verdict; `model`
+/// is the rung, or the `a -> b` rungs, that wrote the text (see
+/// [`route`](crate::route)). `sign` refuses a multi-rung reviewer, and a pair
+/// that shares a model family or whose family is unknown.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signature {
-    /// The route of the reviewer who checked the topic against the code.
+    /// The single `host:model` rung that checked the topic against the code.
     pub reviewer: String,
-    /// The route of the model that wrote the topic.
+    /// The `host:model` rung that wrote the topic, or the `a -> b` rungs if
+    /// an escalation actually ran (every rung counts for the family check).
     pub model: String,
     /// The seal date, `YYYY-MM-DD`.
     pub date: String,
@@ -57,7 +60,8 @@ pub enum SignError {
         /// The reason.
         why: String,
     },
-    /// `reviewer` or `model` is empty, or `date` is not `YYYY-MM-DD`.
+    /// `reviewer` or `model` is empty, `reviewer` is not exactly one rung, or
+    /// `date` is not `YYYY-MM-DD`.
     #[error("{0}")]
     BadSignature(String),
     /// The reviewer shares the author's model family, or a family is
@@ -78,8 +82,8 @@ pub enum SignError {
 /// `body_hash`, and the [`topic_hash`](super::topic_hash) of the text. A
 /// citation that does not parse, is not in the model, may sit in an
 /// unparsable file, or has no fingerprints is refused: nothing is sealed
-/// that `verify` could not then confirm. The reviewer must be a different
-/// model family from `who.model`, else [`SignError::Family`]. Signing records `lock.generator`
+/// that `verify` could not then confirm. The single reviewer rung must be a different
+/// model family from every rung of `who.model`, else [`SignError::Family`]. Signing records `lock.generator`
 /// as this build.
 ///
 /// ```
@@ -115,6 +119,12 @@ pub fn sign(
     }
     if !is_date(&who.date) {
         return Err(SignError::BadSignature(format!("date `{}` is not YYYY-MM-DD", who.date)));
+    }
+    if crate::route::Route::parse(&who.reviewer)?.rungs.len() != 1 {
+        return Err(SignError::BadSignature(format!(
+            "reviewer `{}` must be exactly one `host:model` (the model that gave the verdict), not a route",
+            who.reviewer.trim()
+        )));
     }
     crate::route::cross_family(&who.model, &who.reviewer)?;
     let id = topic_id(text).ok_or_else(|| SignError::NoTopicId(file.clone()))?;

@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*", "bench/e0"]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -14,12 +14,12 @@ keywords = ["mermaid", "diagram", "codemap", "static-analysis", "llm"]
 categories = ["development-tools", "visualization"]
 
 [workspace.dependencies]
-sealmap-model = { path = "crates/sealmap-model", version = "0.3.0" }
-sealmap-extract = { path = "crates/sealmap-extract", version = "0.3.0", default-features = false }
-sealmap-mermaid = { path = "crates/sealmap-mermaid", version = "0.3.0" }
-sealmap-rust = { path = "crates/sealmap-rust", version = "0.3.0", default-features = false }
-sealmap-corpus = { path = "crates/sealmap-corpus", version = "0.3.0" }
-sealmap-dense = { path = "crates/sealmap-dense", version = "0.3.0" }
+sealmap-model = { path = "crates/sealmap-model", version = "0.4.0" }
+sealmap-extract = { path = "crates/sealmap-extract", version = "0.4.0", default-features = false }
+sealmap-mermaid = { path = "crates/sealmap-mermaid", version = "0.4.0" }
+sealmap-rust = { path = "crates/sealmap-rust", version = "0.4.0", default-features = false }
+sealmap-corpus = { path = "crates/sealmap-corpus", version = "0.4.0" }
+sealmap-dense = { path = "crates/sealmap-dense", version = "0.4.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 blake3 = "1"

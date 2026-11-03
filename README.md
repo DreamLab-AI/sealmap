@@ -6,7 +6,7 @@
 
 [![Licence](https://img.shields.io/badge/Licence-MIT%20OR%20Apache--2.0-blue?style=flat-square)](#licence)
 [![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange?style=flat-square)](Cargo.toml)
-[![Status](https://img.shields.io/badge/status-0.3.0%20code%20lens%3B%20seals%20experimental-yellow?style=flat-square)](docs/DESIGN.md)
+[![Status](https://img.shields.io/badge/status-0.4.0%20code%20lens%3B%20seals%20experimental-yellow?style=flat-square)](docs/DESIGN.md)
 
 *Views generated from the source, byte for byte the same on every run.*
 

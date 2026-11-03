@@ -2,6 +2,38 @@
 
 All crates in this workspace share one version.
 
+## 0.4.0 — 2026-11-03
+
+### Added
+- `sealmap_corpus::review`: typed adjacent evidence receipts for immutable review
+  exports, with explicit inconclusive outcomes, consumed-version records and
+  independent source/test/merge/publication/adoption/deployment attestations.
+- `sealmap review init/check/summary`: initialise dispositions, validate contracts
+  and SHA-256 artefacts within an evidence root, and report the unchanged finding
+  denominator. Commands recorded in evidence are never executed.
+- Conservative `pack::changed_topics_by_files` selection, including missing or
+  unknown coverage, source/configuration changes and submodule path changes.
+
+### Changed
+- Pack wire format is version 2: the header includes a digest of all normalised
+  extraction inputs, with optional deterministic CLI repository/build-context
+  provenance. `pack --diff` uses file-level selection, not symbol hashes.
+- `pack -o` requires a fresh file; sharded output requires a fresh directory.
+  An empty selection with `-o` exits 1 and leaves old output untouched. Existing
+  files, directories and symlinks are never silently replaced or mixed with new
+  shards. Use a new output directory per run.
+- Documentation and regression expectations incorporate the estate audit's
+  distinction between source, package, consumer and live-runtime evidence.
+  Seals remain experimental and model agreement remains a ranking signal.
+
+### Fixed
+- Uncited changes in a cited file, dirty/untracked inputs and unknown source
+  coverage can no longer disappear behind unchanged symbol hashes.
+- Multi-repository packs identify each source baseline; untracked extraction
+  inputs and lock/build context affect provenance.
+- `ContentHash` deserialisation validates and normalises its representation;
+  malformed input can no longer violate the invariant used by `short()`.
+
 ## 0.3.0 — 2026-10-31
 
 ### Added

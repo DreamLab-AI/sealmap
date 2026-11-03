@@ -16,9 +16,16 @@ use serde::{Deserialize, Serialize};
 /// assert_eq!(unix, windows);
 /// assert!(unix.to_string().starts_with("blake3:"));
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(transparent)]
 pub struct ContentHash(String);
+
+impl<'de> Deserialize<'de> for ContentHash {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        Self::parse(&text).ok_or_else(|| serde::de::Error::custom("expected blake3:<64 hex digits>"))
+    }
+}
 
 impl ContentHash {
     /// Hash `text` after normalising line endings.
@@ -185,5 +192,16 @@ mod tests {
         assert_eq!(ContentHash::parse(h.as_str()), Some(h.clone()));
         assert_eq!(ContentHash::parse("md5:abc"), None);
         assert_eq!(h.short(8).len(), 8);
+    }
+
+    #[test]
+    fn deserialisation_preserves_the_hash_invariant() {
+        for bad in ["", "x", "md5:abc", "blake3:abc", "blake3:🦀"] {
+            let json = serde_json::to_string(bad).unwrap();
+            assert!(serde_json::from_str::<ContentHash>(&json).is_err(), "{bad:?}");
+        }
+        let hash = ContentHash::of_text("receipt");
+        let parsed: ContentHash = serde_json::from_str(&serde_json::to_string(&hash).unwrap()).unwrap();
+        assert_eq!(parsed.short(999), &hash.as_str()[7..]);
     }
 }

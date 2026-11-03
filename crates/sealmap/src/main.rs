@@ -23,7 +23,7 @@ mod review_cli;
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::io;
+use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 
@@ -211,7 +211,8 @@ struct Stale {
 struct PackArgs {
     /// Topic ids (`COR-04`) or topic files.
     topics: Vec<String>,
-    /// Also pack every topic whose sealed or cited symbols changed since this git revision.
+    /// Also pack topics whose cited files or global build inputs changed since this git revision.
+    /// Includes working-tree and untracked changes; unknown coverage is selected conservatively.
     #[arg(long, value_name = "REV")]
     diff: Option<String>,
     /// Refuse a pack longer than this many bytes (with --shard: per file).
@@ -223,7 +224,8 @@ struct PackArgs {
     /// Most source lines shown per cited symbol (0: none).
     #[arg(long, value_name = "LINES", default_value_t = PackOptions::default().source_window)]
     source_window: usize,
-    /// Write the pack to this file instead of stdout (with --shard: a directory).
+    /// Write to a fresh file instead of stdout (with --shard: a fresh directory).
+    /// Existing destinations are refused. An empty --diff selection exits 1 and preserves the output.
     #[arg(short, long)]
     out: Option<PathBuf>,
     /// Split into numbered files of whole topics, each within --budget, instead of refusing.
@@ -413,13 +415,15 @@ fn extract_sources(
 }
 
 fn parse_repos(repos: &[String]) -> Result<Vec<(String, PathBuf)>, String> {
-    repos
+    let mut result = repos
         .iter()
         .map(|r| {
             let (name, path) = r.split_once('=').ok_or_else(|| format!("--repo expects NAME=PATH, got `{r}`"))?;
             Ok((name.to_owned(), PathBuf::from(path)))
         })
-        .collect()
+        .collect::<Result<Vec<_>, String>>()?;
+    result.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(result)
 }
 
 fn dir_name(p: &Path) -> String {
@@ -612,6 +616,9 @@ struct GitTree(PathBuf);
 
 impl GitTree {
     fn export(root: &Path, rev: &str) -> Result<Self, String> {
+        // Resolve before archive so an option-looking revision is never
+        // interpreted as an archive option (for example --remote).
+        let resolved = git(root, &["rev-parse", "--verify", "--end-of-options", &format!("{rev}^{{commit}}")])?;
         let prefix = git(root, &["rev-parse", "--show-prefix"])?;
         let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
         let dir = std::env::temp_dir().join(format!("sealmap-since-{}-{nanos}", std::process::id()));
@@ -620,7 +627,7 @@ impl GitTree {
         let mut archive = Command::new("git")
             .arg("-C")
             .arg(root)
-            .args(["archive", "--format=tar", &format!("{rev}:{}", prefix.trim())])
+            .args(["archive", "--format=tar", &format!("{}:{}", resolved.trim(), prefix.trim())])
             .stdout(Stdio::piped())
             .spawn()
             .map_err(|e| format!("git archive: {e}"))?;
@@ -709,18 +716,40 @@ fn pack(p: &PackArgs) -> Result<ExitCode, String> {
     }
     if let Some(rev) = &p.diff {
         let before = ctx.model_at(&p.site, rev, "--diff")?;
-        let changed = pack::changed_topics(ctx.lock()?.as_ref(), &ctx.topics, &before, &ctx.codebase);
-        eprintln!("sealmap: {} topic(s) changed since {rev}", changed.len());
+        let files = changed_files(&p.site.root, rev)?;
+        let available = available_files(&p.site.root)?;
+        let changed = pack::changed_topics_by_files(&ctx.topics, &files, &available, &before, &ctx.codebase);
+        eprintln!("sealmap: {} topic(s) selected by cited files/build inputs since {rev}", changed.len());
         ids.extend(changed);
+        let root = p.site.root.canonicalize().map_err(|e| e.to_string())?;
+        let diagrams = ctx.diagrams.canonicalize().map_err(|e| e.to_string())?;
+        for (file, text) in &ctx.topics {
+            let topic = diagrams.join(file.as_str());
+            // A corpus outside the source repository has no comparable Git
+            // baseline here; keep those topics instead of claiming no drift.
+            let changed = match topic.strip_prefix(&root) {
+                Ok(rel) => SourcePath::new(rel.to_string_lossy()).is_ok_and(|p| files.contains(&p)),
+                Err(_) => true,
+            };
+            if changed {
+                if let Some(id) = seal::topic_id(text) {
+                    ids.insert(id);
+                }
+            }
+        }
     } else if ids.is_empty() {
         return Err("name the topics to pack, or select them with --diff REV".into());
     }
     if ids.is_empty() {
+        if p.out.is_some() {
+            eprintln!("sealmap: no topics selected; no pack produced; existing output is unchanged");
+            return Ok(ExitCode::from(1));
+        }
         return Ok(ExitCode::SUCCESS);
     }
     let ids: Vec<String> = ids.into_iter().collect();
-    let revision = revision(&p.site.root);
-    let mut input = PackInput::new(&ctx.codebase, &ctx.sources, &ctx.topics, &revision);
+    let (revision, provenance) = pack_provenance(&p.site, &ctx)?;
+    let mut input = PackInput::new(&ctx.codebase, &ctx.sources, &ctx.topics, &revision).provenance(&provenance);
     if let Some(rev) = &p.diff {
         input = input.diff(rev);
     }
@@ -751,13 +780,32 @@ fn pack(p: &PackArgs) -> Result<ExitCode, String> {
     };
     match (&p.out, p.shard) {
         (None, _) => print!("{}", packs[0].text),
-        (Some(file), false) => fs::write(file, &packs[0].text).map_err(|e| format!("{}: {e}", file.display()))?,
+        (Some(file), false) => {
+            let mut out = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(file)
+                .map_err(|e| format!("{}: {e}; choose a fresh output path", file.display()))?;
+            out.write_all(packs[0].text.as_bytes())
+                .and_then(|()| out.sync_all())
+                .map_err(|e| format!("{}: {e}", file.display()))?;
+        }
         (Some(dir), true) => {
-            fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+            // A fresh directory is the ownership boundary. Never mix this
+            // generation with old shards or overwrite a foreign file/symlink.
+            fs::create_dir(dir)
+                .map_err(|e| format!("{}: {e}; --shard needs a fresh output directory", dir.display()))?;
             let width = packs.len().to_string().len().max(2);
             for (i, one) in packs.iter().enumerate() {
                 let file = dir.join(format!("pack-{:0width$}.txt", i + 1));
-                fs::write(&file, &one.text).map_err(|e| format!("{}: {e}", file.display()))?;
+                let mut out = fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&file)
+                    .map_err(|e| format!("{}: {e}", file.display()))?;
+                out.write_all(one.text.as_bytes())
+                    .and_then(|()| out.sync_all())
+                    .map_err(|e| format!("{}: {e}", file.display()))?;
             }
         }
     }
@@ -766,14 +814,126 @@ fn pack(p: &PackArgs) -> Result<ExitCode, String> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// The checkout's revision for a pack header: `HEAD`'s commit, with
-/// `+dirty` when tracked files differ from it, or `unknown` outside git.
-/// Untracked files are not consulted, so writing a pack into the checkout
-/// does not change the next pack's header.
-fn revision(root: &Path) -> String {
-    let Ok(head) = git(root, &["rev-parse", "HEAD"]) else { return "unknown".into() };
-    let dirty = git(root, &["status", "--porcelain", "--untracked-files=no"]).is_ok_and(|s| !s.trim().is_empty());
-    format!("{}{}", head.trim(), if dirty { "+dirty" } else { "" })
+/// Git's file inventory plus a non-symlink existence check. Missing sources
+/// and files reached through a submodule/symlink remain unknown to this root.
+fn available_files(root: &Path) -> Result<BTreeSet<SourcePath>, String> {
+    git(root, &["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "."])?
+        .split('\0')
+        .filter(|p| !p.is_empty())
+        .filter(|p| fs::symlink_metadata(root.join(p)).is_ok_and(|m| m.file_type().is_file()))
+        .map(|p| SourcePath::new(p).map_err(|e| e.to_string()))
+        .collect()
+}
+
+/// Changes in committed, staged, unstaged and untracked files, relative to
+/// `root`. Disabling rename detection retains both old and new names.
+fn changed_files(root: &Path, base: &str) -> Result<BTreeSet<SourcePath>, String> {
+    let base = git(root, &["rev-parse", "--verify", "--end-of-options", &format!("{base}^{{commit}}")])?;
+    let tracked = git(root, &["diff", "--relative", "--name-only", "--no-renames", "-z", base.trim(), "--", "."])?;
+    let untracked = git(root, &["ls-files", "--others", "--exclude-standard", "-z", "--", "."])?;
+    tracked
+        .split('\0')
+        .chain(untracked.split('\0'))
+        .filter(|p| !p.is_empty())
+        .map(|p| SourcePath::new(p).map_err(|e| e.to_string()))
+        .collect()
+}
+
+/// The commit is a baseline, not an assertion that the sampled working tree
+/// equals that commit. The pack's source-inputs hash binds the actual extracted
+/// text, including untracked Rust files. Output files are not input paths.
+fn repository_provenance(root: &Path, inputs: &BTreeSet<String>) -> serde_json::Value {
+    let snapshot = || -> Result<serde_json::Value, String> {
+        let head = git(root, &["rev-parse", "--verify", "HEAD"])?;
+        let tracked = git(root, &["ls-files", "-z", "--", "."])?;
+        let tracked: BTreeSet<&str> = tracked.split('\0').filter(|p| !p.is_empty()).collect();
+        let changed = git(root, &["diff", "--relative", "--name-only", "--no-renames", "-z", "HEAD", "--", "."])?;
+        let dirty: BTreeSet<&str> = changed.split('\0').filter(|p| inputs.contains(*p)).collect();
+        let untracked: Vec<&str> =
+            inputs.iter().filter(|p| !tracked.contains(p.as_str())).map(String::as_str).collect();
+        Ok(serde_json::json!({"head":head.trim(), "dirty":dirty, "untracked":untracked}))
+    };
+    snapshot().unwrap_or_else(|_| serde_json::json!({"head":null,"status":"unavailable"}))
+}
+
+/// Hash the local build context separately from extraction inputs. Recording a
+/// lockfile is not a claim that a build or deployed consumer uses it.
+fn code_provenance(root: &Path, mut inputs: BTreeSet<String>) -> Result<serde_json::Value, String> {
+    let mut context_paths: BTreeSet<String> = [
+        "Cargo.lock",
+        "rust-toolchain",
+        "rust-toolchain.toml",
+        ".cargo/config",
+        ".cargo/config.toml",
+        ".gitignore",
+        ".ignore",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+    for input in &inputs {
+        if let Some(prefix) = input.strip_suffix("Cargo.toml") {
+            context_paths.insert(format!("{prefix}build.rs"));
+            context_paths.insert(format!("{prefix}Cargo.lock"));
+        }
+    }
+    let mut context = serde_json::Map::new();
+    for name in context_paths {
+        match fs::read(root.join(&name)) {
+            Ok(bytes) => {
+                context.insert(name.clone(), serde_json::json!(sealmap::model::ContentHash::of_bytes(&bytes)));
+                inputs.insert(name);
+            }
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("{}: {e}", root.join(name).display())),
+        }
+    }
+    let mut result = repository_provenance(root, &inputs);
+    result["build_context"] = serde_json::Value::Object(context);
+    Ok(result)
+}
+
+fn pack_provenance(site: &Site, ctx: &Ctx) -> Result<(String, String), String> {
+    let mut repositories = serde_json::Map::new();
+    if site.source.repos.is_empty() {
+        let inputs = ctx.sources.paths().map(|p| p.as_str().to_owned()).collect();
+        repositories.insert("root".into(), code_provenance(&site.root, inputs)?);
+    } else {
+        for (name, root) in parse_repos(&site.source.repos)? {
+            let prefix = format!("{name}/");
+            let inputs =
+                ctx.sources.paths().filter_map(|p| p.as_str().strip_prefix(&prefix).map(str::to_owned)).collect();
+            repositories.insert(name, code_provenance(&root, inputs)?);
+        }
+    }
+    let root = site.root.canonicalize().map_err(|e| e.to_string())?;
+    let diagrams = ctx.diagrams.canonicalize().map_err(|e| e.to_string())?;
+    let corpus_root = git(&diagrams, &["rev-parse", "--show-toplevel"]).ok().map(|p| PathBuf::from(p.trim()));
+    let corpus_base = corpus_root.as_deref().unwrap_or(&root);
+    let topic_inputs = ctx
+        .topics
+        .keys()
+        .filter_map(|p| {
+            diagrams.join(p.as_str()).strip_prefix(corpus_base).ok().map(|p| p.to_string_lossy().into_owned())
+        })
+        .collect();
+    let corpus = repository_provenance(corpus_base, &topic_inputs);
+    let revision = if site.source.repos.is_empty() {
+        let repo = &repositories["root"];
+        let head = repo["head"].as_str().unwrap_or("unknown");
+        let dirty = [&repo["dirty"], &repo["untracked"], &corpus["dirty"], &corpus["untracked"]]
+            .iter()
+            .any(|v| v.as_array().is_some_and(|a| !a.is_empty()));
+        format!("{head}{}", if dirty { "+dirty" } else { "" })
+    } else {
+        "multiple (see provenance)".into()
+    };
+    let provenance = serde_json::to_string(&serde_json::json!({
+        "capture":"working-tree", "repositories": repositories, "corpus":corpus,
+        "options":{"tests":site.source.tests,"external":"non-std"}
+    }))
+    .map_err(|e| e.to_string())?;
+    Ok((revision, provenance))
 }
 
 /// A topic named by id, or by a path relative to the current directory or

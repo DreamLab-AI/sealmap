@@ -34,7 +34,27 @@ versions, and keeps source/test/merge/publication/adoption/deployment claims
 independent. The library checks contracts; callers verify artefact bytes and
 judge observations. `sealmap review` provides the filesystem/hash-checking CLI.
 
-Part of [sealmap](https://github.com/DreamLab-AI/sealmap).
+## Use this crate independently
+
+```toml
+[dependencies]
+sealmap-corpus = "=0.4.0"
+```
+
+No Agentbox or model service is required. Extraction examples below also use
+`sealmap-model = "=0.4.0"` and `sealmap-rust = "=0.4.0"`. These versions target
+the 0.4.0 release; use a local checkout while publication is pending.
+
+| API | Caller supplies | Result |
+|---|---|---|
+| `generate` | Extracted model and projection options | Deterministic generated corpus. |
+| `pack::pack` / `pack::shard` | Model, source texts, topics, revision metadata and byte budget | Bounded review text. |
+| `pack::changed_topics_by_files` | Changed paths, paths with known ownership, before/after models and topics | Conservative queue, including unknown dependencies. |
+| `review::validate` | Original finding ids and an adjacent receipt | Contract errors and assessment/stage counts. |
+| `review::artifacts` | Receipt | Every referenced artefact for the caller to verify. |
+
+## Generate diagrams
+
 
 ```rust
 use sealmap_corpus::{CorpusOptions, generate};
@@ -77,6 +97,40 @@ assert!(matches!(
     Err(PackError::OverBudget { budget: 100, .. })
 ));
 ```
+
+## Check a receipt in memory
+
+This example uses a real digest of the literal review bytes. Missing dispositions
+remain unverified, so a valid contract can still contain unresolved work:
+
+```rust
+use sealmap_corpus::review::{Artifact, EvidenceFile, findings, validate};
+
+let raw = br#"[{"id":"F-01"}]"#;
+let ids = findings(raw).unwrap();
+let receipt = EvidenceFile {
+    version: 1,
+    review: Artifact {
+        path: "findings.json".into(),
+        sha256: "765f4ac0ef435db2a74b6979abf454534c44a1395648d936c15129b97fca60f6".into(),
+    },
+    dispositions: vec![],
+};
+let report = validate(&receipt, &ids);
+assert!(report.valid());
+assert_eq!(report.findings_total, 1);
+assert_eq!(report.unresolved, 1);
+```
+
+`validate` does not read files or check that a digest matches them. Verify every
+reference returned by `artifacts`, including the original review, working-tree
+snapshots and consumed lockfiles. Use `sealmap review check` when you want the
+CLI to perform those IO checks beneath an evidence root.
+
+A confirmed finding remains confirmed after a repair. Delivery attestations are
+separate (`source`, `tested`, `merged`, `published`, `adopted`, `deployed`); their
+counts are not completion percentages. Inconclusive evidence is not a rejected
+finding. See the [full receipt contract](https://github.com/DreamLab-AI/sealmap/blob/main/docs/REVIEW-EVIDENCE.md).
 
 ## Licence
 

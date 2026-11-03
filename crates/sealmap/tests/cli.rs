@@ -497,3 +497,157 @@ fn sign_refuses_a_multi_rung_reviewer_and_writes_nothing() {
     assert!(err.contains("exactly one"), "{err}");
     assert!(!dir.join("docs/diagrams/seals.lock").exists());
 }
+
+#[cfg(unix)]
+#[test]
+fn lock_links_and_diagram_parent_links_refuse_without_disclosure_or_partial_signing() {
+    use std::os::unix::fs::symlink;
+    let args = ["seal", "sign", "LED-01", "--reviewer", "zai:glm-5.3", "--model", "claude:claude-sonnet-5-5"];
+    for dangling in [false, true] {
+        let dir = scratch(if dangling { "lock-link-dangling" } else { "lock-link-secret" });
+        let target = dir.join("fixture-secret.txt");
+        if !dangling {
+            fs::write(&target, "FIXTURE_SECRET_DO_NOT_LOG = [malformed").unwrap();
+        }
+        symlink(&target, dir.join("docs/diagrams/seals.lock")).unwrap();
+        for command in [&["verify"][..], &args[..]] {
+            let output = sealmap(&dir, command);
+            assert_eq!(code(&output), 2, "{}", String::from_utf8_lossy(&output.stderr));
+            assert!(!stdout(&output).contains("FIXTURE_SECRET_DO_NOT_LOG"));
+            assert!(!String::from_utf8_lossy(&output.stderr).contains("FIXTURE_SECRET_DO_NOT_LOG"));
+        }
+        assert_eq!(fs::read_to_string(dir.join("docs/diagrams/ledger/01-accounts.md")).unwrap(), TOPIC);
+        assert_eq!(target.exists(), !dangling);
+        if !dangling {
+            assert_eq!(fs::read_to_string(target).unwrap(), "FIXTURE_SECRET_DO_NOT_LOG = [malformed");
+        }
+    }
+    let dir = scratch("diagrams-parent-link");
+    fs::rename(dir.join("docs"), dir.join("outside-docs")).unwrap();
+    symlink("outside-docs", dir.join("docs")).unwrap();
+    assert_eq!(code(&sealmap(&dir, &args)), 2);
+    assert_eq!(fs::read_to_string(dir.join("outside-docs/diagrams/ledger/01-accounts.md")).unwrap(), TOPIC);
+    assert!(!dir.join("outside-docs/diagrams/seals.lock").exists());
+}
+
+#[test]
+fn malformed_regular_lock_diagnostics_do_not_include_input_contents() {
+    let dir = scratch("lock-malformed-redaction");
+    fs::write(dir.join("docs/diagrams/seals.lock"), "FIXTURE_SECRET_DO_NOT_LOG = [malformed").unwrap();
+    for args in [
+        &["verify"][..],
+        &["verify", "--json"][..],
+        &["seal-check", "LED-01"][..],
+        &["resolve", DEPOSIT][..],
+        &["stale"][..],
+    ] {
+        let output = sealmap(&dir, args);
+        assert!(!output.status.success());
+        assert!(!stdout(&output).contains("FIXTURE_SECRET_DO_NOT_LOG"));
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("FIXTURE_SECRET_DO_NOT_LOG"));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn dense_refuses_final_and_parent_links_before_writing_any_output() {
+    use std::os::unix::fs::symlink;
+    for name in ["dense.txt", "_index.txt"] {
+        let dir = scratch(&format!("dense-link-{name}"));
+        fs::create_dir_all(dir.join(".sealmap/dense")).unwrap();
+        fs::write(dir.join("foreign.txt"), "KEEP_FOREIGN_BYTES").unwrap();
+        symlink(dir.join("foreign.txt"), dir.join(".sealmap/dense").join(name)).unwrap();
+        assert_eq!(code(&sealmap(&dir, &["dense"])), 2);
+        assert_eq!(fs::read_to_string(dir.join("foreign.txt")).unwrap(), "KEEP_FOREIGN_BYTES");
+        assert_eq!(fs::read_dir(dir.join(".sealmap/dense")).unwrap().count(), 1);
+    }
+    let dir = scratch("dense-parent-link");
+    fs::create_dir(dir.join("foreign")).unwrap();
+    symlink("foreign", dir.join(".sealmap")).unwrap();
+    assert_eq!(code(&sealmap(&dir, &["dense"])), 2);
+    assert!(fs::read_dir(dir.join("foreign")).unwrap().next().is_none());
+}
+
+#[cfg(unix)]
+#[test]
+fn explicit_source_root_alias_and_regular_dense_outputs_remain_usable() {
+    use std::os::unix::fs::symlink;
+    let dir = scratch("source-root-alias");
+    let alias = dir.with_extension("alias");
+    let _ = fs::remove_file(&alias);
+    symlink(&dir, &alias).unwrap();
+    let output = sealmap(
+        &dir,
+        &[
+            "seal",
+            "sign",
+            "LED-01",
+            "-C",
+            alias.to_str().unwrap(),
+            "--reviewer",
+            "zai:glm-5.3",
+            "--model",
+            "claude:claude-sonnet-5-5",
+        ],
+    );
+    assert_eq!(code(&output), 0, "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(code(&sealmap(&dir, &["verify", "-C", alias.to_str().unwrap()])), 0);
+    for _ in 0..2 {
+        assert_eq!(code(&sealmap(&dir, &["dense", "-o", "new/nested/dense"])), 0);
+    }
+    assert!(!fs::read_to_string(dir.join("new/nested/dense/dense.txt")).unwrap().is_empty());
+    fs::remove_file(alias).unwrap();
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn git_export_directory_is_private_and_removed_after_success_and_failure() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = scratch("git-private-export");
+    sign(&dir);
+    git(&dir, &["init", "-q"]);
+    git(&dir, &["add", "."]);
+    git(&dir, &["commit", "-qm", "fixture"]);
+    let real_tar = Command::new("sh").args(["-c", "command -v tar"]).output().unwrap();
+    let bin = dir.join("bin");
+    fs::create_dir(&bin).unwrap();
+    let temp = dir.join("temporary");
+    fs::create_dir(&temp).unwrap();
+    fs::write(bin.join("tar"), "#!/bin/sh\n[ \"$(stat -c %a \"$3\")\" = 700 ] || exit 47\n[ -z \"$SEALMAP_FAIL_TAR\" ] || exit 48\nexec \"$SEALMAP_REAL_TAR\" \"$@\"\n").unwrap();
+    fs::set_permissions(bin.join("tar"), fs::Permissions::from_mode(0o700)).unwrap();
+    for fail in [false, true] {
+        let output = Command::new("sh")
+            .current_dir(&dir)
+            .args(["-c", "umask 022; exec \"$@\"", "export-test"])
+            .arg(env!("CARGO_BIN_EXE_sealmap"))
+            .args(["stale", "--since", "HEAD"])
+            .env("GIT_CEILING_DIRECTORIES", GIT_CEILING)
+            .env("TMPDIR", &temp)
+            .env("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()))
+            .env("SEALMAP_REAL_TAR", String::from_utf8_lossy(&real_tar.stdout).trim())
+            .env("SEALMAP_FAIL_TAR", if fail { "yes" } else { "" })
+            .output()
+            .unwrap();
+        assert_eq!(code(&output), if fail { 2 } else { 0 }, "{}", String::from_utf8_lossy(&output.stderr));
+        assert!(fs::read_dir(&temp).unwrap().next().is_none(), "temporary export must be removed");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn all_cli_output_modes_refuse_symlinked_parent_directories() {
+    let dir = scratch("output-parent-links");
+    fs::create_dir(dir.join("foreign")).unwrap();
+    std::os::unix::fs::symlink("foreign", dir.join("linked")).unwrap();
+    for args in [
+        vec!["generate", "-o", "linked/generated"],
+        vec!["pack", "LED-01", "-o", "linked/pack.txt"],
+        vec!["pack", "LED-01", "--shard", "-o", "linked/packs"],
+    ] {
+        assert_eq!(code(&sealmap(&dir, &args)), 2);
+        assert_eq!(fs::read_dir(dir.join("foreign")).unwrap().count(), 0);
+    }
+    assert_eq!(code(&sealmap(&dir, &["generate", "-o", "regular/nested"])), 0);
+    assert_eq!(code(&sealmap(&dir, &["generate", "--check", "-o", "regular/nested"])), 0);
+    assert_eq!(code(&sealmap(&dir, &["pack", "LED-01", "-o", "regular/pack.txt"])), 0);
+}

@@ -1,27 +1,24 @@
-//! The `docs/diagrams/.tiers.json` reader (agentbox ADR-2130).
+//! Portable per-corpus, per-activity route records.
 //!
-//! The file records, per corpus and per activity, a confirmed de-escalation:
-//! the route a measured descent settled on. Activities have different default
-//! routes (`diagram-polish` is T1, `diagram-synthesis` is T3), so a record
-//! must say which activity it lowered. It is sticky per corpus. An activity
-//! with no record starts from the route default. This module only reads the
-//! record; it measures nothing and writes nothing.
+//! This reader records a confirmed route for a named activity; it neither
+//! measures a de-escalation nor executes a model. An absent record selects the
+//! caller's default route. No Agentbox manifest is needed.
 //!
 //! ```json
 //! { "version": 1,
-//!   "corpora": { "sealmap": { "diagram-polish": "claude:claude-sonnet-5-5" } } }
+//!   "corpora": { "project-docs": { "review-security": "gateway:google/gemini-pro" } } }
 //! ```
 //!
-//! The format (a `corpora` -> activity -> route map) is this crate's reading
-//! of ADR-2130, which fixes the file's name and its stickiness but not its
-//! layout.
+//! [`Tiers::parse`] accepts arbitrary activity identifiers. Applications with a
+//! fixed vocabulary should use [`Tiers::parse_with_activities`] so misspellings
+//! fail rather than silently fall back. [`Tiers::parse_agentbox`] is an explicit
+//! adapter for that consumer's four activities and narrower route grammar.
 //!
-//! The schema is version 1, strict: unknown keys, a duplicated key, an
-//! activity outside [`ACTIVITIES`], a wrong version or a route outside the
-//! manifest grammar are errors. An absent file means "no
-//! records"; a present but malformed one is never read as empty.
+//! Schema version, unknown object fields and duplicate keys remain strict under
+//! every policy. An absent file means no records; malformed present data never
+//! becomes an empty configuration.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use serde::Deserialize;
@@ -33,19 +30,22 @@ use crate::route::{Route, RouteError};
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum TierError {
-    /// The file is not valid version-1 `.tiers.json`.
+    /// The file or activity policy is not valid version-1 route data.
     #[error(".tiers.json is malformed: {0}")]
     Malformed(String),
-    /// A route (recorded or default) is outside the route grammar.
+    /// A route (recorded or default) is outside the selected grammar.
     #[error("{0}")]
     Route(#[from] RouteError),
 }
 
-/// The activities ADR-2130 routes. A record for any other name is refused.
-pub const ACTIVITIES: [&str; 4] = ["diagram-polish", "diagram-narrative", "diagram-synthesis", "seal-review"];
+/// Agentbox ADR-2130 activities; used only by the explicit Agentbox adapter.
+pub const AGENTBOX_ACTIVITIES: [&str; 4] = ["diagram-polish", "diagram-narrative", "diagram-synthesis", "seal-review"];
 
-/// A JSON object read into a map that refuses a repeated key (serde's
-/// `BTreeMap` keeps the last one silently).
+/// Compatibility alias for [`AGENTBOX_ACTIVITIES`]. This list does not constrain
+/// the generic [`Tiers::parse`] API.
+pub const ACTIVITIES: [&str; 4] = AGENTBOX_ACTIVITIES;
+
+/// Refuse repeated JSON object keys instead of keeping the last value.
 #[derive(Debug)]
 struct Unique<V>(BTreeMap<String, V>);
 
@@ -79,55 +79,138 @@ struct File {
     corpora: Unique<Unique<String>>,
 }
 
-/// The confirmed de-escalations, per corpus.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum RoutePolicy {
+    #[default]
+    Portable,
+    Agentbox,
+}
+
+impl RoutePolicy {
+    fn parse(self, text: &str) -> Result<Route, RouteError> {
+        match self {
+            Self::Portable => Route::parse(text),
+            Self::Agentbox => Route::parse_agentbox(text),
+        }
+    }
+}
+
+fn activity_name(name: &str) -> Result<(), TierError> {
+    if !name.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
+        || !name.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+    {
+        return Err(TierError::Malformed(format!("invalid activity `{name}` (expected an ASCII identifier)")));
+    }
+    Ok(())
+}
+
+fn corpus_name(name: &str) -> Result<(), TierError> {
+    if name.trim().is_empty() || name.chars().any(char::is_control) {
+        return Err(TierError::Malformed("corpus name must be non-empty and contain no control characters".into()));
+    }
+    Ok(())
+}
+
+/// Confirmed routes and the policy used to read them. Lookup applies the same
+/// activity/route policy, including when no record exists and a default is used.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Tiers {
     corpora: BTreeMap<(String, String), String>,
+    allowed_activities: Option<BTreeSet<String>>,
+    route_policy: RoutePolicy,
 }
 
 impl Tiers {
-    /// Parse `.tiers.json` text.
+    /// Parse portable version-1 route records. Activity names start with an
+    /// ASCII letter and then use letters/digits, `.`, `_` or `-`.
     ///
     /// ```
     /// use sealmap_corpus::tiers::Tiers;
-    ///
-    /// let t = Tiers::parse(r#"{"version":1,"corpora":{"c":{"diagram-polish":"claude:claude-sonnet-5-5"}}}"#).unwrap();
-    /// assert_eq!(t.start_route("c", "diagram-polish", "loom:qwen3.8-27B").unwrap(), "claude:claude-sonnet-5-5");
-    /// assert_eq!(t.start_route("c", "diagram-synthesis", "loom:qwen3.8-27B").unwrap(), "loom:qwen3.8-27B");
+    /// let t = Tiers::parse(r#"{"version":1,"corpora":{"docs":{"review-security":"google:gemini-pro"}}}"#)?;
+    /// assert_eq!(t.start_route("docs", "review-security", "local:writer")?, "google:gemini-pro");
+    /// assert_eq!(t.start_route("docs", "summary", "local:writer")?, "local:writer");
+    /// # Ok::<(), sealmap_corpus::tiers::TierError>(())
     /// ```
     pub fn parse(text: &str) -> Result<Self, TierError> {
+        Self::read(Some(text), None, RoutePolicy::Portable)
+    }
+
+    /// Parse records using a caller-supplied activity vocabulary. Unknown
+    /// activity names fail both on input and during [`Self::start_route`].
+    /// An empty vocabulary admits no activities.
+    pub fn parse_with_activities(text: &str, activities: &[&str]) -> Result<Self, TierError> {
+        Self::read(Some(text), Some(activities), RoutePolicy::Portable)
+    }
+
+    /// Apply Agentbox ADR-2130's four activities and provider/model grammar.
+    pub fn parse_agentbox(text: &str) -> Result<Self, TierError> {
+        Self::read(Some(text), Some(&AGENTBOX_ACTIVITIES), RoutePolicy::Agentbox)
+    }
+
+    /// Read portable records if present. An empty/malformed file is an error.
+    pub fn from_file_text(text: Option<&str>) -> Result<Self, TierError> {
+        Self::read(text, None, RoutePolicy::Portable)
+    }
+
+    /// Read optional records while retaining a caller's activity vocabulary,
+    /// even when no file exists and lookups use their supplied defaults.
+    pub fn from_file_text_with_activities(text: Option<&str>, activities: &[&str]) -> Result<Self, TierError> {
+        Self::read(text, Some(activities), RoutePolicy::Portable)
+    }
+
+    /// Read optional records under the explicit Agentbox policy.
+    pub fn from_file_text_agentbox(text: Option<&str>) -> Result<Self, TierError> {
+        Self::read(text, Some(&AGENTBOX_ACTIVITIES), RoutePolicy::Agentbox)
+    }
+
+    fn read(text: Option<&str>, activities: Option<&[&str]>, route_policy: RoutePolicy) -> Result<Self, TierError> {
+        let allowed_activities = activities
+            .map(|names| {
+                names
+                    .iter()
+                    .map(|name| {
+                        activity_name(name)?;
+                        Ok((*name).to_owned())
+                    })
+                    .collect::<Result<BTreeSet<_>, TierError>>()
+            })
+            .transpose()?;
+        let mut tiers = Self { corpora: BTreeMap::new(), allowed_activities, route_policy };
+        let Some(text) = text else { return Ok(tiers) };
         let file: File = serde_json::from_str(text).map_err(|e| TierError::Malformed(e.to_string()))?;
         if file.version != 1 {
             return Err(TierError::Malformed(format!("version {} is not supported (expected 1)", file.version)));
         }
-        let mut corpora = BTreeMap::new();
         for (name, activities) in file.corpora.0 {
+            corpus_name(&name)?;
             for (activity, route) in activities.0 {
-                if !ACTIVITIES.contains(&activity.as_str()) {
-                    return Err(TierError::Malformed(format!(
-                        "corpus `{name}`: unknown activity `{activity}` (expected one of {})",
-                        ACTIVITIES.join(", ")
-                    )));
-                }
-                Route::parse(&route)
+                tiers.check_activity(&activity)?;
+                route_policy
+                    .parse(&route)
                     .map_err(|e| TierError::Malformed(format!("corpus `{name}`, activity `{activity}`: {e}")))?;
-                corpora.insert((name.clone(), activity), route.trim().to_owned());
+                tiers.corpora.insert((name.clone(), activity), route.trim().to_owned());
             }
         }
-        Ok(Self { corpora })
+        Ok(tiers)
     }
 
-    /// The tiers from the file's text if the file exists (`Some`), or no
-    /// records if it does not (`None`). `Some("")` is malformed, not absent.
-    pub fn from_file_text(text: Option<&str>) -> Result<Self, TierError> {
-        text.map_or_else(|| Ok(Self::default()), Self::parse)
+    fn check_activity(&self, activity: &str) -> Result<(), TierError> {
+        activity_name(activity)?;
+        if let Some(allowed) = &self.allowed_activities {
+            if !allowed.contains(activity) {
+                return Err(TierError::Malformed(format!("unknown activity `{activity}` under selected policy")));
+            }
+        }
+        Ok(())
     }
 
-    /// The route to start `activity` from on `corpus`: its confirmed route,
-    /// else `default` (the manifest route for the activity). `default` must
-    /// parse.
+    /// The recorded route, else the caller's default. Both lookup keys and the
+    /// default are checked against the policy selected when reading the file.
+    /// This function neither executes a route nor attests its model identity.
     pub fn start_route(&self, corpus: &str, activity: &str, default: &str) -> Result<String, TierError> {
-        Route::parse(default)?;
+        corpus_name(corpus)?;
+        self.check_activity(activity)?;
+        self.route_policy.parse(default)?;
         let key = (corpus.to_owned(), activity.to_owned());
         Ok(self.corpora.get(&key).cloned().unwrap_or_else(|| default.trim().to_owned()))
     }

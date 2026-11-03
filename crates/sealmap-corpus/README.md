@@ -34,6 +34,48 @@ versions, and keeps source/test/merge/publication/adoption/deployment claims
 independent. The library checks contracts; callers verify artefact bytes and
 judge observations. `sealmap review` provides the filesystem/hash-checking CLI.
 
+The `route` and `tiers` modules are portable declarations for review tools.
+`Route::parse` accepts named providers and namespaced/tagged model identifiers;
+`Tiers::parse` accepts an application's own activity names. Neither executes
+models, discovers endpoints, grants network access or needs an orchestrator.
+Applications with fixed vocabularies can use `Tiers::parse_with_activities`.
+
+Family checks use recognised model names or an explicit `FamilyCatalogue`,
+never a provider label alone. The one verdict-producing reviewer must differ
+from every authoring model's family. Unknown identities, conflicting aliases
+and known provider/model contradictions fail closed. Catalogue declarations
+are caller knowledge, not proof of the model served by a running endpoint.
+
+```rust
+use sealmap_corpus::route::{Family, FamilyCatalogue, cross_family_with};
+use sealmap_corpus::tiers::Tiers;
+
+let mut families = FamilyCatalogue::default();
+families.declare("local:writer", Family::Anthropic).unwrap();
+families.declare("gateway:checker", Family::Google).unwrap();
+cross_family_with("local:writer", "gateway:checker", &families).unwrap();
+
+let tiers = Tiers::parse_with_activities(
+    r#"{"version":1,"corpora":{"project":{"review-security":"gateway:checker"}}}"#,
+    &["review-security", "summary"],
+).unwrap();
+assert_eq!(tiers.start_route("project", "review-security", "local:writer").unwrap(), "gateway:checker");
+assert!(tiers.start_route("project", "misspelled-activity", "local:writer").is_err());
+```
+
+For Agentbox's narrower policy, opt into `Route::parse_agentbox` and
+`Tiers::parse_agentbox` (or `from_file_text_agentbox` for an optional file).
+These retain its four providers, four diagram activities and simple model-id
+grammar. The policy also applies to default routes and activity lookups.
+Unknown fields, duplicate JSON keys and unsupported versions remain errors
+under all policies.
+
+In 0.4, the default route/activity parsers are portable. Callers relying on the
+0.3 Agentbox restrictions should select the explicit adapter methods. `Family`
+is now `Clone` rather than `Copy` to support caller-defined family names. The
+CLI's experimental `seal sign` uses recognised model names; alias catalogues
+are a library API and are not silently loaded from configuration.
+
 Part of [sealmap](https://github.com/DreamLab-AI/sealmap).
 
 ```rust

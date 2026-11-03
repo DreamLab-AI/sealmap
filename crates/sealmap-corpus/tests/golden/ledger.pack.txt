@@ -1,4 +1,4 @@
-# sealmap-pack 1
+# sealmap-pack 2
 generator: sealmap 0.3.0
 codebase: ledger
 revision: 4f1a9de0c0ffee
@@ -6,6 +6,7 @@ topics: LED-01 LED-02
 budget: none
 depth: 1
 source-window: 6 lines
+source-inputs: blake3:1d3e46073d3188919751d5e6c5b9e040bf8740f023440f03f9a46e4357d6c53d
 ==== topic LED-01 389 bytes ledger/01-accounts.md
 ---
 id: LED-01

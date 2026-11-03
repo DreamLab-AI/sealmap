@@ -136,7 +136,7 @@ fn every_block_length_is_exact() {
     // Walk the pack by the declared lengths alone: every block header is
     // followed by exactly its payload (plus a newline the length leaves out
     // when the payload lacks one), and the walk ends exactly at the end.
-    let mut rest = text.split_once("source-window: 40 lines\n").unwrap().1;
+    let mut rest = &text[text.find("==== topic ").unwrap()..];
     let mut blocks = 0;
     while !rest.is_empty() {
         let (head, after) = rest.split_once('\n').unwrap();

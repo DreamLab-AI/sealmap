@@ -213,7 +213,7 @@ fn pack_is_byte_identical_across_runs_and_argument_order() {
     let b = sealmap(&dir, &["pack", "ledger/02-withdrawals.md", "LED-01", "LED-02"]);
     assert_eq!(a.stdout, b.stdout);
     let text = stdout(&a);
-    assert!(text.starts_with("# sealmap-pack 1\n"), "{text}");
+    assert!(text.starts_with("# sealmap-pack 2\n"), "{text}");
     assert!(
         text.contains("\nrevision: unknown\ntopics: LED-01 LED-02\nbudget: none\ndepth: 1\nsource-window: 40 lines\n")
     );
@@ -257,7 +257,7 @@ fn pack_over_budget_refuses_with_sizes_and_shards_on_request() {
 }
 
 #[test]
-fn pack_diff_selects_topics_whose_cited_symbols_changed_since_a_revision() {
+fn pack_diff_selects_topics_whose_cited_files_changed_since_a_revision() {
     if !has_git() {
         eprintln!("git not available; skipping");
         return;
@@ -275,12 +275,15 @@ fn pack_diff_selects_topics_whose_cited_symbols_changed_since_a_revision() {
     assert_eq!(code(&o), 0);
     assert!(o.stdout.is_empty());
 
-    // Change deposit only: LED-01 cites it, LED-02 does not.
+    // Change deposit only: both topics cite the same source file.
     edit(&dir, "src/accounts.rs", "self.balance += amount;", "self.balance += amount * 2;");
     let o = sealmap(&dir, &["pack", "--diff", "HEAD"]);
     assert_eq!(code(&o), 0, "{}", String::from_utf8_lossy(&o.stderr));
     let text = stdout(&o);
-    assert!(text.contains(&format!("\nrevision: {}+dirty\ndiff: HEAD\ntopics: LED-01\n", head.trim())), "{text}");
+    assert!(
+        text.contains(&format!("\nrevision: {}+dirty\ndiff: HEAD\ntopics: LED-01 LED-02\n", head.trim())),
+        "{text}"
+    );
     assert!(text.contains("self.balance += amount * 2;"), "the window shows the current code: {text}");
     // Explicit topics join the changed ones.
     let both = stdout(&sealmap(&dir, &["pack", "LED-02", "--diff", "HEAD"]));
@@ -290,8 +293,152 @@ fn pack_diff_selects_topics_whose_cited_symbols_changed_since_a_revision() {
     git(&dir, &["commit", "-q", "-am", "double deposits"]);
     assert!(stdout(&sealmap(&dir, &["pack", "--diff", "HEAD"])).is_empty());
     let since_base = stdout(&sealmap(&dir, &["pack", "--diff", head.trim()]));
-    assert!(since_base.contains("\ntopics: LED-01\n") && !since_base.contains("+dirty"), "{since_base}");
+    assert!(since_base.contains("\ntopics: LED-01 LED-02\n") && !since_base.contains("+dirty"), "{since_base}");
     assert_eq!(code(&sealmap(&dir, &["pack", "--diff", "no-such-rev"])), 2);
+}
+
+#[test]
+fn pack_diff_keeps_same_file_topics_and_global_dependency_changes() {
+    if !has_git() {
+        return;
+    }
+    let dir = scratch2("pack-file-baseline");
+    git(&dir, &["init", "-q"]);
+    git(&dir, &["add", "-A"]);
+    git(&dir, &["commit", "-q", "-m", "base"]);
+    // The uncited caller/context can change the documented contract even when
+    // a cited symbol's body is identical. File-level selection keeps both.
+    edit(&dir, "src/accounts.rs", "self.balance += amount;", "self.balance += amount * 2;");
+    let out = sealmap(&dir, &["pack", "--diff", "HEAD"]);
+    assert_eq!(code(&out), 0);
+    assert!(stdout(&out).contains("\ntopics: LED-01 LED-02\n"), "{}", stdout(&out));
+    git(&dir, &["commit", "-q", "-am", "changed implementation"]);
+    fs::write(dir.join("Cargo.lock"), "version = 4\n").unwrap();
+    let out = sealmap(&dir, &["pack", "--diff", "HEAD"]);
+    assert_eq!(code(&out), 0);
+    assert!(stdout(&out).contains("\ntopics: LED-01 LED-02\n"), "{}", stdout(&out));
+}
+
+#[test]
+fn pack_provenance_binds_untracked_inputs_but_ignores_its_output() {
+    if !has_git() {
+        return;
+    }
+    let dir = scratch("pack-provenance");
+    git(&dir, &["init", "-q"]);
+    git(&dir, &["add", "-A"]);
+    git(&dir, &["commit", "-q", "-m", "base"]);
+    let clean = stdout(&sealmap(&dir, &["pack", "LED-01"]));
+    fs::write(dir.join("src/new.rs"), "pub fn untracked() {}\n").unwrap();
+    let untracked = stdout(&sealmap(&dir, &["pack", "LED-01"]));
+    assert_ne!(clean, untracked, "untracked extraction inputs must be bound");
+    assert!(untracked.contains("source-inputs: blake3:"));
+    assert!(untracked.contains("src/new.rs"), "untracked input is visible in provenance");
+    fs::write(dir.join("review-pack.txt"), &untracked).unwrap();
+    assert_eq!(untracked, stdout(&sealmap(&dir, &["pack", "LED-01"])));
+    fs::write(dir.join("Cargo.lock"), "version = 4\n").unwrap();
+    let with_lock = stdout(&sealmap(&dir, &["pack", "LED-01"]));
+    assert_ne!(with_lock, untracked);
+    let provenance: serde_json::Value =
+        serde_json::from_str(with_lock.lines().find_map(|l| l.strip_prefix("provenance: ")).unwrap()).unwrap();
+    assert!(
+        provenance["repositories"]["root"]["build_context"]["Cargo.lock"]
+            .as_str()
+            .is_some_and(|h| h.starts_with("blake3:"))
+    );
+}
+
+#[test]
+fn pack_records_every_repository_and_is_independent_of_repo_argument_order() {
+    if !has_git() {
+        return;
+    }
+    let left = scratch("pack-repo-left");
+    let right = scratch("pack-repo-right");
+    for dir in [&left, &right] {
+        git(dir, &["init", "-q"]);
+        git(dir, &["add", "-A"]);
+        git(dir, &["commit", "-q", "-m", "base"]);
+    }
+    let a = format!("left={}", left.display());
+    let b = format!("right={}", right.display());
+    let first = sealmap(&left, &["pack", "LED-01", "--repo", &a, "--repo", &b]);
+    assert_eq!(code(&first), 0, "{}", String::from_utf8_lossy(&first.stderr));
+    let reversed = sealmap(&left, &["pack", "LED-01", "--repo", &b, "--repo", &a]);
+    assert_eq!(first.stdout, reversed.stdout);
+    let text = stdout(&first);
+    let provenance: serde_json::Value =
+        serde_json::from_str(text.lines().find_map(|l| l.strip_prefix("provenance: ")).unwrap()).unwrap();
+    assert!(provenance["repositories"]["left"]["head"].as_str().is_some_and(|s| s.len() == 40));
+    assert!(provenance["repositories"]["right"]["head"].as_str().is_some_and(|s| s.len() == 40));
+    fs::write(right.join("src/untracked.rs"), "pub fn additional() {}\n").unwrap();
+    let changed = stdout(&sealmap(&left, &["pack", "LED-01", "--repo", &a, "--repo", &b]));
+    assert_ne!(text, changed);
+    let provenance: serde_json::Value =
+        serde_json::from_str(changed.lines().find_map(|l| l.strip_prefix("provenance: ")).unwrap()).unwrap();
+    assert_eq!(provenance["repositories"]["right"]["untracked"], serde_json::json!(["src/untracked.rs"]));
+    assert_eq!(provenance["repositories"]["left"]["untracked"], serde_json::json!([]));
+}
+
+#[test]
+fn pack_diff_supports_declared_non_rust_sources_and_topic_edits() {
+    if !has_git() {
+        return;
+    }
+    let dir = scratch("pack-declared-sources");
+    fs::create_dir_all(dir.join("web")).unwrap();
+    fs::write(dir.join("web/client.ts"), "export const active = true;\n").unwrap();
+    fs::write(
+        dir.join("docs/diagrams/ledger/01-accounts.md"),
+        "---\nid: LED-01\nsources:\n  - web/client.ts\n---\nClient active.\n",
+    )
+    .unwrap();
+    git(&dir, &["init", "-q"]);
+    git(&dir, &["add", "-A"]);
+    git(&dir, &["commit", "-q", "-m", "base"]);
+    assert!(stdout(&sealmap(&dir, &["pack", "--diff", "HEAD"])).is_empty());
+    fs::write(dir.join("web/client.ts"), "export const active = false;\n").unwrap();
+    assert!(stdout(&sealmap(&dir, &["pack", "--diff", "HEAD"])).contains("topics: LED-01"));
+    git(&dir, &["commit", "-q", "-am", "client"]);
+    edit(&dir, "docs/diagrams/ledger/01-accounts.md", "Client active.", "Client inactive.");
+    assert!(stdout(&sealmap(&dir, &["pack", "--diff", "HEAD"])).contains("Client inactive."));
+}
+
+#[test]
+fn empty_diff_and_existing_outputs_never_report_a_fresh_pack() {
+    if !has_git() {
+        return;
+    }
+    let dir = scratch("pack-output-freshness");
+    git(&dir, &["init", "-q"]);
+    git(&dir, &["add", "-A"]);
+    git(&dir, &["commit", "-q", "-m", "base"]);
+    fs::write(dir.join("old-pack.txt"), "old snapshot").unwrap();
+    let out = sealmap(&dir, &["pack", "--diff", "HEAD", "-o", "old-pack.txt"]);
+    assert_eq!(code(&out), 1);
+    assert_eq!(fs::read_to_string(dir.join("old-pack.txt")).unwrap(), "old snapshot");
+    fs::create_dir(dir.join("packs")).unwrap();
+    fs::write(dir.join("packs/pack-99.txt"), "old shard").unwrap();
+    let out = sealmap(&dir, &["pack", "LED-01", "--shard", "--budget", "10000", "-o", "packs"]);
+    assert_ne!(code(&out), 0);
+    assert_eq!(fs::read_dir(dir.join("packs")).unwrap().count(), 1);
+    assert_eq!(fs::read_to_string(dir.join("packs/pack-99.txt")).unwrap(), "old shard");
+    let out = sealmap(&dir, &["pack", "LED-01", "-o", "src/accounts.rs"]);
+    assert_ne!(code(&out), 0);
+    assert_eq!(fs::read_to_string(dir.join("src/accounts.rs")).unwrap(), ACCOUNTS);
+}
+
+#[cfg(unix)]
+#[test]
+fn pack_outputs_do_not_follow_existing_symlinks() {
+    let dir = scratch("pack-output-symlinks");
+    std::os::unix::fs::symlink("src/accounts.rs", dir.join("out.txt")).unwrap();
+    assert_ne!(code(&sealmap(&dir, &["pack", "LED-01", "-o", "out.txt"])), 0);
+    assert_eq!(fs::read_to_string(dir.join("src/accounts.rs")).unwrap(), ACCOUNTS);
+    fs::create_dir(dir.join("foreign")).unwrap();
+    std::os::unix::fs::symlink("foreign", dir.join("packs")).unwrap();
+    assert_ne!(code(&sealmap(&dir, &["pack", "LED-01", "--shard", "--budget", "10000", "-o", "packs"])), 0);
+    assert_eq!(fs::read_dir(dir.join("foreign")).unwrap().count(), 0);
 }
 
 /// ER `gen X-08`: every `--repo` is loaded under its `NAME/` prefix, so two

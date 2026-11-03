@@ -81,6 +81,84 @@ fn catalogue_cannot_override_known_models_or_conflicting_aliases() {
 }
 
 #[test]
+fn shared_prefixes_do_not_establish_a_known_model_family() {
+    for model in [
+        "gpt-j-6b",
+        "gpt-neox",
+        "gpt4all",
+        "gpt-4all",
+        "gpt-4ocean",
+        "gpt-ossuary",
+        "o1bert",
+        "o3x",
+        "o4all",
+        "claudeish",
+        "codexchange",
+        "glmish",
+        "qwenterprise",
+        "qwen3ish",
+        "geminify",
+    ] {
+        let route = format!("local:{model}");
+        assert!(
+            matches!(Route::parse(&route).unwrap().families(), Err(RouteError::UnknownFamily { .. })),
+            "{route} must require an explicit family declaration"
+        );
+        assert!(cross_family("openai:gpt-6", &route).is_err(), "{route}");
+        assert!(cross_family(&route, "anthropic:claude-sonnet").is_err(), "{route}");
+        let mut catalogue = FamilyCatalogue::default();
+        catalogue.declare(&route, Family::named("other-lab").unwrap()).unwrap();
+    }
+}
+
+#[test]
+fn foreign_models_with_a_shared_prefix_use_their_declared_family() {
+    let mut catalogue = FamilyCatalogue::default();
+    let family = Family::named("eleutherai").unwrap();
+    catalogue.declare("local:gpt-j-6b", family.clone()).unwrap();
+    catalogue.declare("gateway:eleutherai/gpt-neox:latest", family.clone()).unwrap();
+    catalogue.declare("local:pythia-12b", family.clone()).unwrap();
+    for author in ["local:gpt-j-6b", "gateway:eleutherai/gpt-neox:latest"] {
+        assert!(matches!(
+            cross_family_with(author, "local:pythia-12b", &catalogue),
+            Err(RouteError::SameFamily { family: shared, .. }) if shared == family
+        ));
+        cross_family_with("openai:gpt-6", author, &catalogue).unwrap();
+    }
+}
+
+#[test]
+fn bounded_known_model_names_remain_recognised_and_cannot_be_relabelled() {
+    for (model, family) in [
+        ("gpt-6-astra", Family::OpenAi),
+        ("gpt-4o", Family::OpenAi),
+        ("gpt-4o-mini", Family::OpenAi),
+        ("gpt-4.1", Family::OpenAi),
+        ("gpt-oss-20b", Family::OpenAi),
+        ("o1", Family::OpenAi),
+        ("o3", Family::OpenAi),
+        ("o4-mini", Family::OpenAi),
+        ("codex-mini-latest", Family::OpenAi),
+        ("claude-sonnet-5-5", Family::Anthropic),
+        ("claude-opus", Family::Anthropic),
+        ("glm-5.3", Family::Zhipu),
+        ("qwen3.8-27B", Family::Alibaba),
+        ("qwen2.5-coder", Family::Alibaba),
+        ("qwen-3-8b", Family::Alibaba),
+        ("gemini-pro", Family::Google),
+        ("gemini-3.8-flash", Family::Google),
+    ] {
+        for spelling in [model.into(), format!("namespace/{}:latest", model.to_uppercase()), format!("{model}@pin")] {
+            let route = format!("gateway:{spelling}");
+            assert_eq!(Route::parse(&route).unwrap().families().unwrap(), [family.clone()].into(), "{route}");
+            let mut catalogue = FamilyCatalogue::default();
+            assert!(catalogue.declare(&route, Family::named("independent").unwrap()).is_err(), "{route}");
+            catalogue.declare(&route, family.clone()).unwrap();
+        }
+    }
+}
+
+#[test]
 fn family_checks_reject_multiple_reviewers_and_manually_malformed_routes() {
     assert!(matches!(
         cross_family("local:claude-sonnet", "google:gemini-pro -> zai:glm-5.3"),

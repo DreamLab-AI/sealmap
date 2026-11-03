@@ -1,5 +1,11 @@
 # sealmap
 
+The `review init`, `review check` and `review summary` commands validate
+evidence-backed finding dispositions without modifying the original review.
+They distinguish an inconclusive reproduction from a rejection, verify retained
+artefact hashes, and report repair delivery stages separately. See the
+[receipt workflow](https://github.com/DreamLab-AI/sealmap/blob/main/docs/REVIEW-EVIDENCE.md).
+
 [![crates.io](https://img.shields.io/crates/v/sealmap.svg)](https://crates.io/crates/sealmap)
 [![docs.rs](https://img.shields.io/docsrs/sealmap)](https://docs.rs/sealmap)
 
@@ -51,7 +57,7 @@ sealmap stale --since main          # sealed symbols changed since a revision; e
 
 # Review packs: topics, dense slices of the code they cite, source windows
 sealmap pack CP-03 CP-07 --budget 200000             # stdout; exit 1 naming each topic's size if over
-sealmap pack --diff main --budget 200000 --shard -o packs/   # changed topics, split by topic
+sealmap pack --diff main --budget 200000 --shard -o packs-new/   # per-file selection, fresh output directory
 ```
 
 Exit codes: 0 success; 1 a check failed, an id is not found, or a seal was

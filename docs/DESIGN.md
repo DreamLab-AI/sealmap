@@ -1,5 +1,27 @@
 # sealmap design
 
+## Review evidence and selection (2026-11-03)
+
+The estate audit exposed gaps in review bookkeeping, rather than new evidence
+for symbol-level skipping. `pack --diff` now selects conservatively by source
+file, with configuration/dependency changes and unknown coverage widening the
+selection. Pack format 2 records the normalised extraction input digest and
+the CLI's repository/build-context provenance. Those records identify inputs;
+they do not attest that a runtime consumed them.
+
+`sealmap_corpus::review` and `sealmap review init/check/summary` validate adjacent
+finding dispositions and artefact integrity. They distinguish setup failure,
+inconclusive evidence and counterevidence, and keep every repair delivery stage
+independent. [The receipt contract](REVIEW-EVIDENCE.md) and
+[expectations](REVIEW-EXPECTATIONS.md) define the supported workflow.
+Agentbox's existing review skill consumes it; there is no new issue database.
+
+These changes supersede the old symbol-only `--diff` selection below, while
+preserving the experimental status of seals and the evidence programme's
+negative results. Agreement between reviewers remains a ranking signal. The
+new tooling does not establish that diagram packs outperform full-source
+review, or that an artefact hash verifies the truth of its contents.
+
 ## Status after the evidence programme (2026-10-06)
 
 The design below was accepted on 2026-10-05 and is kept as written, as the

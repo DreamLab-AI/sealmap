@@ -9,7 +9,8 @@ links every call to the fragment that expands it, and the model itself. It
 also writes the corpus to disk and checks a directory against it, touching
 only files it generated and never writing through a symbolic link.
 
-Its `seal` module keeps hand-written diagram topics true to the code. A
+Its experimental `seal` module tracks cited symbol hashes; it does not prove
+that hand-written diagram topics remain true. A
 topic cites symbols by `sym:` id; `seals.lock` records the `sig_hash` and
 `body_hash` each had when the topic was reviewed, plus a hash of the topic's
 prose. `seal::verify` classifies every seal as holds, behaviour, contract,
@@ -21,8 +22,17 @@ git.
 Its `pack` module builds review packs: one deterministic text holding
 chosen topics verbatim, the `sealmap-dense` slice of the code each cites and
 a bounded window of that code's source, refused (never truncated) when over
-a byte budget, or split into shards of whole topics. `pack::changed_topics`
-picks the topics whose sealed or cited symbols changed between two models.
+a byte budget, or split into shards of whole topics. `pack::changed_topics_by_files`
+selects conservatively by declared/cited files and build context, including
+unknown coverage. `pack::changed_topics` remains an experimental symbol-change
+diagnostic: its measured recall was insufficient as a review skipping gate.
+
+Its `review` module validates adjacent evidence receipts for unchanged review
+exports. It separates confirmed, rejected, known, inconclusive and unverified
+findings, checks exact revision and artefact references, records consumed
+versions, and keeps source/test/merge/publication/adoption/deployment claims
+independent. The library checks contracts; callers verify artefact bytes and
+judge observations. `sealmap review` provides the filesystem/hash-checking CLI.
 
 Part of [sealmap](https://github.com/DreamLab-AI/sealmap).
 

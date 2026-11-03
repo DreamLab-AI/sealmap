@@ -37,6 +37,10 @@ What it is good for, on the evidence ([below](#what-the-evidence-says)):
   byte-identical on every run, and over budget it refuses rather than cuts.
 - **Stable symbol ids and content hashes.** `sym:` ids hold no path or line,
   so moving code keeps them; signature and body hashes ignore formatting.
+- **Review evidence that survives handoff.** `review init`, `review check` and
+  `review summary` preserve raw findings, validate adjacent dispositions and
+  artefact hashes, and distinguish source repairs from consumer adoption and
+  deployment. [Workflow and receipt contract](docs/REVIEW-EVIDENCE.md).
 
 **Seals and staleness are experimental, not recommended for corpus upkeep.**
 `seal sign`, `verify`, `seal-check`, `stale` and `resolve` exist and behave as
@@ -288,7 +292,7 @@ sealmap dense . --stats
 
 # Review packs: topics + dense slices of the code they cite + source windows
 sealmap pack CP-03 CP-07 --budget 200000 > pack.txt          # refused (exit 1, sizes named) if over budget
-sealmap pack --diff main --budget 200000 --shard -o packs/   # topics whose cited symbols changed (symbol-level: misses some), split by topic
+sealmap pack --diff main --budget 200000 --shard -o packs-new/   # conservative per-file selection, fresh output directory
 ```
 
 Exit codes: 0 success; 1 a check failed, an id is not found, or a seal was
@@ -310,6 +314,17 @@ resolve, and a window of each cited symbol's source labelled
 ```
 
 Topics still citing `path:line` rather than `sym:` ids pack as text only.
+Diff selection still reads their declared source files conservatively. Unknown
+or missing source coverage remains selected; configuration and dependency
+changes widen selection. Pack format 2 binds the normalised extraction inputs,
+repository baselines and local build-context hashes. These are input records,
+not evidence of package consumption or runtime activation.
+
+`-o` requires a fresh file, and `--shard -o` requires a fresh directory. Old
+shards are never mixed with a new generation. An empty diff selection with an
+output path exits 1 and leaves existing files untouched, so an old pack cannot
+look like a successful new result. Choose a new run directory for each review.
+
 A diagrams-only `--review` mode is designed but not built
 ([`docs/DESIGN.md`](docs/DESIGN.md) §4).
 

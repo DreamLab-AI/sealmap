@@ -16,7 +16,7 @@ categories.workspace = true
 [features]
 default = ["cli", "parallel"]
 ## The `sealmap` command-line tool.
-cli = ["dep:clap", "dep:sha2"]
+cli = ["dep:clap", "dep:sha2", "dep:tempfile"]
 ## Parallel parsing (output is identical either way).
 parallel = ["sealmap-rust/parallel", "sealmap-extract/parallel"]
 
@@ -30,6 +30,7 @@ sealmap-dense.workspace = true
 serde_json.workspace = true
 clap = { workspace = true, optional = true }
 sha2 = { version = "0.10", optional = true }
+tempfile = { version = "3.27", optional = true }
 
 [[bin]]
 name = "sealmap"

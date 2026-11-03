@@ -120,7 +120,7 @@ impl Fingerprint {
     /// Parse `blake3-16:<32 hex>` (either case).
     pub fn parse(s: &str) -> Option<Self> {
         let hex = s.strip_prefix(Self::PREFIX)?;
-        if hex.len() != 32 {
+        if hex.len() != 32 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
             return None;
         }
         let mut b = [0u8; 16];
@@ -185,6 +185,18 @@ pub(crate) fn normalise_newlines(text: &str) -> std::borrow::Cow<'_, str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fingerprint_rejects_signed_byte_pairs_and_accepts_hex() {
+        for pair in ["+0", "+a", "-0", " g"] {
+            let text = format!("blake3-16:{}", pair.repeat(16));
+            assert!(Fingerprint::parse(&text).is_none(), "{text}");
+        }
+        for pair in ["00", "af", "AF"] {
+            let text = format!("blake3-16:{}", pair.repeat(16));
+            assert!(Fingerprint::parse(&text).is_some(), "{text}");
+        }
+    }
 
     #[test]
     fn parse_round_trips() {

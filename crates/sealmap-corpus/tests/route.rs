@@ -1,6 +1,5 @@
-//! ADR-2130: a seal review is a different model family from the author, and
-//! `.tiers.json` records confirmed de-escalations. Model ids are the ones in
-//! agentbox's `[model_routing.routes]`.
+//! Compatibility and explicit Agentbox policy tests. Portable providers and
+//! activities are covered separately in portable_route.rs.
 
 use sealmap_corpus::route::{Family, Route, RouteError, cross_family};
 use sealmap_corpus::tiers::{TierError, Tiers};
@@ -46,9 +45,9 @@ fn an_escalating_route_carries_the_family_of_every_rung() {
 #[test]
 fn grammar_is_the_manifest_grammar() {
     for bad in ["", "claude", "gemini:gemini-3.8-flash", "claude:a -> claude:b -> claude:c", "claude:a ->", "claude:"] {
-        assert!(Route::parse(bad).is_err(), "{bad:?} must not parse");
+        assert!(Route::parse_agentbox(bad).is_err(), "{bad:?} must not parse under Agentbox policy");
     }
-    assert!(Route::parse("  claude:x  ->  zai:y ").is_ok());
+    assert!(Route::parse_agentbox("  claude:x  ->  zai:y ").is_ok());
 }
 
 #[test]
@@ -112,7 +111,7 @@ fn a_malformed_file_is_an_error_never_a_silent_default() {
         r#"{"version":2,"corpora":{}}"#,
         r#"{"corpora":{}}"#,
         r#"{"version":1,"corpora":{"a":{"diagram-polish":1}}}"#,
-        r#"{"version":1,"corpora":{"a":{"diagram-polish":"gemini:x"}}}"#,
+        r#"{"version":1,"corpora":{"a":{"diagram-polish":"not a route"}}}"#,
         r#"{"version":1,"corpora":{"a":"claude:x"}}"#,
         r#"{"version":1,"corpora":{},"extra":1}"#,
     ] {
@@ -141,8 +140,8 @@ fn a_duplicate_key_is_an_error_not_last_one_wins() {
 
 #[test]
 fn an_unknown_activity_is_an_error_not_a_silently_lost_record() {
-    let err =
-        Tiers::parse(r#"{"version":1,"corpora":{"c":{"diagram-polsh":"claude:claude-sonnet-5-5"}}}"#).unwrap_err();
+    let err = Tiers::parse_agentbox(r#"{"version":1,"corpora":{"c":{"diagram-polsh":"claude:claude-sonnet-5-5"}}}"#)
+        .unwrap_err();
     assert!(matches!(err, TierError::Malformed(_)), "{err}");
     assert!(err.to_string().contains("diagram-polsh"), "{err}");
 }
@@ -151,7 +150,7 @@ fn an_unknown_activity_is_an_error_not_a_silently_lost_record() {
 fn every_known_activity_is_accepted() {
     for a in ["diagram-polish", "diagram-narrative", "diagram-synthesis", "seal-review"] {
         let text = format!(r#"{{"version":1,"corpora":{{"c":{{"{a}":"claude:claude-sonnet-5-5"}}}}}}"#);
-        Tiers::parse(&text).unwrap_or_else(|e| panic!("{a}: {e}"));
+        Tiers::parse_agentbox(&text).unwrap_or_else(|e| panic!("{a}: {e}"));
     }
 }
 

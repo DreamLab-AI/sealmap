@@ -95,6 +95,7 @@ mod index;
 mod naming;
 mod overview;
 pub mod pack;
+pub mod review;
 pub mod route;
 pub mod seal;
 mod sequence;

@@ -19,6 +19,8 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+mod review_cli;
+
 use std::collections::BTreeSet;
 use std::fs;
 use std::io;
@@ -62,6 +64,9 @@ enum Cmd {
     Seal(SealCmd),
     /// A deterministic review pack: topics, dense slices of the code they cite, source windows.
     Pack(PackArgs),
+    /// Validate evidence-backed finding dispositions and separate delivery stages.
+    #[command(subcommand)]
+    Review(review_cli::Review),
 }
 
 #[derive(Subcommand)]
@@ -292,6 +297,7 @@ fn run(cli: Cli) -> Result<ExitCode, String> {
         Cmd::Stale(s) => stale(&s),
         Cmd::Seal(SealCmd::Sign(s)) => sign(&s),
         Cmd::Pack(p) => pack(&p),
+        Cmd::Review(r) => review_cli::run(r),
     }
 }
 

@@ -9,7 +9,8 @@ links every call to the fragment that expands it, and the model itself. It
 also writes the corpus to disk and checks a directory against it, touching
 only files it generated and never writing through a symbolic link.
 
-Its `seal` module keeps hand-written diagram topics true to the code. A
+Its experimental `seal` module tracks cited symbol hashes; it does not prove
+that hand-written diagram topics remain true. A
 topic cites symbols by `sym:` id; `seals.lock` records the `sig_hash` and
 `body_hash` each had when the topic was reviewed, plus a hash of the topic's
 prose. `seal::verify` classifies every seal as holds, behaviour, contract,
@@ -21,10 +22,80 @@ git.
 Its `pack` module builds review packs: one deterministic text holding
 chosen topics verbatim, the `sealmap-dense` slice of the code each cites and
 a bounded window of that code's source, refused (never truncated) when over
-a byte budget, or split into shards of whole topics. `pack::changed_topics`
-picks the topics whose sealed or cited symbols changed between two models.
+a byte budget, or split into shards of whole topics. `pack::changed_topics_by_files`
+selects conservatively by declared/cited files and build context, including
+unknown coverage. `pack::changed_topics` remains an experimental symbol-change
+diagnostic: its measured recall was insufficient as a review skipping gate.
 
-Part of [sealmap](https://github.com/DreamLab-AI/sealmap).
+Its `review` module validates adjacent evidence receipts for unchanged review
+exports. It separates confirmed, rejected, known, inconclusive and unverified
+findings, checks exact revision and artefact references, records consumed
+versions, and keeps source/test/merge/publication/adoption/deployment claims
+independent. The library checks contracts; callers verify artefact bytes and
+judge observations. `sealmap review` provides the filesystem/hash-checking CLI.
+
+## Use this crate independently
+
+```toml
+[dependencies]
+sealmap-corpus = "=0.4.0"
+```
+
+No Agentbox or model service is required. Extraction examples below also use
+`sealmap-model = "=0.4.0"` and `sealmap-rust = "=0.4.0"`.
+
+| API | Caller supplies | Result |
+|---|---|---|
+| `generate` | Extracted model and projection options | Deterministic generated corpus. |
+| `pack::pack` / `pack::shard` | Model, source texts, topics, revision metadata and byte budget | Bounded review text. |
+| `pack::changed_topics_by_files` | Changed paths, paths with known ownership, before/after models and topics | Conservative queue, including unknown dependencies. |
+| `review::validate` | Original finding ids and an adjacent receipt | Contract errors and assessment/stage counts. |
+| `review::artifacts` | Receipt | Every referenced artefact for the caller to verify. |
+
+## Portable routing and activity declarations
+The `route` and `tiers` modules are portable declarations for review tools.
+`Route::parse` accepts named providers and namespaced/tagged model identifiers;
+`Tiers::parse` accepts an application's own activity names. Neither executes
+models, discovers endpoints, grants network access or needs an orchestrator.
+Applications with fixed vocabularies can use `Tiers::parse_with_activities`.
+
+Family checks use recognised model names or an explicit `FamilyCatalogue`,
+never a provider label alone. The one verdict-producing reviewer must differ
+from every authoring model's family. Unknown identities, conflicting aliases
+and known provider/model contradictions fail closed. Catalogue declarations
+are caller knowledge, not proof of the model served by a running endpoint.
+
+```rust
+use sealmap_corpus::route::{Family, FamilyCatalogue, cross_family_with};
+use sealmap_corpus::tiers::Tiers;
+
+let mut families = FamilyCatalogue::default();
+families.declare("local:writer", Family::Anthropic).unwrap();
+families.declare("gateway:checker", Family::Google).unwrap();
+cross_family_with("local:writer", "gateway:checker", &families).unwrap();
+
+let tiers = Tiers::parse_with_activities(
+    r#"{"version":1,"corpora":{"project":{"review-security":"gateway:checker"}}}"#,
+    &["review-security", "summary"],
+).unwrap();
+assert_eq!(tiers.start_route("project", "review-security", "local:writer").unwrap(), "gateway:checker");
+assert!(tiers.start_route("project", "misspelled-activity", "local:writer").is_err());
+```
+
+For Agentbox's narrower policy, opt into `Route::parse_agentbox` and
+`Tiers::parse_agentbox` (or `from_file_text_agentbox` for an optional file).
+These retain its four providers, four diagram activities and simple model-id
+grammar. The policy also applies to default routes and activity lookups.
+Unknown fields, duplicate JSON keys and unsupported versions remain errors
+under all policies.
+
+In 0.4, the default route/activity parsers are portable. Callers relying on the
+0.3 Agentbox restrictions should select the explicit adapter methods. `Family`
+is now `Clone` rather than `Copy` to support caller-defined family names. The
+CLI's experimental `seal sign` uses recognised model names; alias catalogues
+are a library API and are not silently loaded from configuration.
+
+## Generate diagrams
 
 ```rust
 use sealmap_corpus::{CorpusOptions, generate};
@@ -67,6 +138,40 @@ assert!(matches!(
     Err(PackError::OverBudget { budget: 100, .. })
 ));
 ```
+
+## Check a receipt in memory
+
+This example uses a real digest of the literal review bytes. Missing dispositions
+remain unverified, so a valid contract can still contain unresolved work:
+
+```rust
+use sealmap_corpus::review::{Artifact, EvidenceFile, findings, validate};
+
+let raw = br#"[{"id":"F-01"}]"#;
+let ids = findings(raw).unwrap();
+let receipt = EvidenceFile {
+    version: 1,
+    review: Artifact {
+        path: "findings.json".into(),
+        sha256: "765f4ac0ef435db2a74b6979abf454534c44a1395648d936c15129b97fca60f6".into(),
+    },
+    dispositions: vec![],
+};
+let report = validate(&receipt, &ids);
+assert!(report.valid());
+assert_eq!(report.findings_total, 1);
+assert_eq!(report.unresolved, 1);
+```
+
+`validate` does not read files or check that a digest matches them. Verify every
+reference returned by `artifacts`, including the original review, working-tree
+snapshots and consumed lockfiles. Use `sealmap review check` when you want the
+CLI to perform those IO checks beneath an evidence root.
+
+A confirmed finding remains confirmed after a repair. Delivery attestations are
+separate (`source`, `tested`, `merged`, `published`, `adopted`, `deployed`); their
+counts are not completion percentages. Inconclusive evidence is not a rejected
+finding. See the [full receipt contract](https://github.com/DreamLab-AI/sealmap/blob/main/docs/REVIEW-EVIDENCE.md).
 
 ## Licence
 

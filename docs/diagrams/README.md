@@ -61,7 +61,7 @@ new commit, correct the lines that moved, and bump that topic's
 `verified_commit`; leave topics whose sources did not change on their stamp.
 
 <!-- BEGIN GENERATED DIAGRAM INDEX -->
-_20 topic files, 106 diagrams. Regenerate with_ `node docs/diagrams/tools/diagram-index-gen.cjs docs/diagrams`.
+_21 topic files, 108 diagrams. Regenerate with_ `node docs/diagrams/tools/diagram-index-gen.cjs docs/diagrams`.
 
 ### model
 
@@ -99,6 +99,7 @@ _20 topic files, 106 diagrams. Regenerate with_ `node docs/diagrams/tools/diagra
 | COR-04 | [Seals, the lock and the checks](corpus/04-seals-the-lock-and-the-checks.md) | 6 | classDiagram, flowchart, sequenceDiagram | [DESIGN.md](../../docs/DESIGN.md), [README.md](../../README.md) |  |
 | COR-05 | [The seal commands, resolve, verify, stale and sign](corpus/05-the-seal-commands.md) | 4 | sequenceDiagram, flowchart | [DESIGN.md](../../docs/DESIGN.md), [README.md](../../README.md) |  |
 | COR-06 | [Review packs](corpus/06-review-packs.md) | 4 | flowchart, sequenceDiagram | [DESIGN.md](../../docs/DESIGN.md), [README.md](../../README.md) |  |
+| COR-07 | [Conservative review selection and evidence receipts](corpus/07-review-evidence-and-selection.md) | 2 | flowchart | [DESIGN.md](../../docs/DESIGN.md), [REVIEW-EVIDENCE.md](../../docs/REVIEW-EVIDENCE.md), [REVIEW-EXPECTATIONS.md](../../docs/REVIEW-EXPECTATIONS.md) |  |
 
 ### delivery
 

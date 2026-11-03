@@ -1,5 +1,9 @@
 /target
 /docs/diagrams/rendered/
 /.sealmap/
+/.diagram-review/
+/.deepsec-gate/
+/.review-evidence/
+/.selection-evidence/
 /deprecated/*/target
 /deprecated/*/Cargo.lock

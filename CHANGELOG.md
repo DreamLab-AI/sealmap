@@ -2,6 +2,66 @@
 
 All crates in this workspace share one version.
 
+## 0.4.0 — 2026-11-03
+
+### Added
+- `sealmap_corpus::review`: typed adjacent evidence receipts for immutable review
+  exports, with explicit inconclusive outcomes, consumed-version records and
+  independent source/test/merge/publication/adoption/deployment attestations.
+- `sealmap review init/check/summary`: initialise dispositions, validate contracts
+  and SHA-256 artefacts within an evidence root, and report the unchanged finding
+  denominator. Commands recorded in evidence are never executed.
+- Conservative `pack::changed_topics_by_files` selection, including missing or
+  unknown coverage, source/configuration changes and submodule path changes.
+- Portable route and activity declarations: named providers, namespaced model
+  ids, application-defined activities and explicit family catalogues. Fixed
+  activity vocabularies can use `Tiers::parse_with_activities`.
+
+### Changed
+- Pack wire format is version 2: the header includes a digest of all normalised
+  extraction inputs, with optional deterministic CLI repository/build-context
+  provenance. `pack --diff` uses file-level selection, not symbol hashes.
+- `pack -o` requires a fresh file; sharded output requires a fresh directory.
+  An empty selection with `-o` exits 1 and leaves old output untouched. Existing
+  files, directories and symlinks are never silently replaced or mixed with new
+  shards. Use a new output directory per run.
+- Documentation and regression expectations incorporate the estate audit's
+  distinction between source, package, consumer and live-runtime evidence.
+  Seals remain experimental and model agreement remains a ranking signal.
+- `Route::parse` and `Tiers::parse` now use the portable policy. Consumers that
+  require the 0.3 Agentbox vocabulary must select `parse_agentbox` explicitly.
+  `Family` is `Clone` rather than `Copy` to support caller-defined families.
+
+### Fixed
+- Model-family recognition now respects name/version boundaries: foreign names
+  such as `gpt-j` require explicit declarations and cannot earn false
+  cross-family review credit through a shared prefix.
+- Uncited changes in a cited file, dirty/untracked inputs and unknown source
+  coverage can no longer disappear behind unchanged symbol hashes.
+- Multi-repository packs identify each source baseline; untracked extraction
+  inputs and lock/build context affect provenance.
+- `ContentHash` deserialisation validates and normalises its representation;
+  malformed input can no longer violate the invariant used by `short()`.
+- Seal lock/topic IO, dense output and pack output refuse checkout symlink
+  paths. Dense and seal writes stage content before replacing destinations;
+  malformed seal-lock diagnostics no longer echo input values. Temporary Git
+  exports use private, uniquely created directories and are removed on failure.
+- Fingerprint parsing rejects signed byte pairs and requires ASCII hexadecimal
+  digits. Model-family checks recognise known model identities, reject
+  conflicting declarations and do not infer a
+  family from a provider label alone.
+
+### Limits
+- Receipt checks establish contract consistency and artefact integrity;
+  reviewers still judge the observations and decision authority. Delivery
+  counts are attestations, not completion percentages.
+- File-based selection deliberately keeps uncertain topics. Symbol staleness
+  and seals remain experimental; packs have not been shown to improve review
+  quality over full source when that source fits in context.
+- Local path checks do not provide a sandbox against concurrent hostile
+  filesystem replacement. A failed pack write can leave newly created partial
+  output, so consumers must check the command's exit status.
+
 ## 0.3.0 — 2026-10-31
 
 ### Added

@@ -16,9 +16,16 @@ use serde::{Deserialize, Serialize};
 /// assert_eq!(unix, windows);
 /// assert!(unix.to_string().starts_with("blake3:"));
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(transparent)]
 pub struct ContentHash(String);
+
+impl<'de> Deserialize<'de> for ContentHash {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        Self::parse(&text).ok_or_else(|| serde::de::Error::custom("expected blake3:<64 hex digits>"))
+    }
+}
 
 impl ContentHash {
     /// Hash `text` after normalising line endings.
@@ -113,7 +120,7 @@ impl Fingerprint {
     /// Parse `blake3-16:<32 hex>` (either case).
     pub fn parse(s: &str) -> Option<Self> {
         let hex = s.strip_prefix(Self::PREFIX)?;
-        if hex.len() != 32 {
+        if hex.len() != 32 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
             return None;
         }
         let mut b = [0u8; 16];
@@ -180,10 +187,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn fingerprint_rejects_signed_byte_pairs_and_accepts_hex() {
+        for pair in ["+0", "+a", "-0", " g"] {
+            let text = format!("blake3-16:{}", pair.repeat(16));
+            assert!(Fingerprint::parse(&text).is_none(), "{text}");
+        }
+        for pair in ["00", "af", "AF"] {
+            let text = format!("blake3-16:{}", pair.repeat(16));
+            assert!(Fingerprint::parse(&text).is_some(), "{text}");
+        }
+    }
+
+    #[test]
     fn parse_round_trips() {
         let h = ContentHash::of_text("x");
         assert_eq!(ContentHash::parse(h.as_str()), Some(h.clone()));
         assert_eq!(ContentHash::parse("md5:abc"), None);
         assert_eq!(h.short(8).len(), 8);
+    }
+
+    #[test]
+    fn deserialisation_preserves_the_hash_invariant() {
+        for bad in ["", "x", "md5:abc", "blake3:abc", "blake3:🦀"] {
+            let json = serde_json::to_string(bad).unwrap();
+            assert!(serde_json::from_str::<ContentHash>(&json).is_err(), "{bad:?}");
+        }
+        let hash = ContentHash::of_text("receipt");
+        let parsed: ContentHash = serde_json::from_str(&serde_json::to_string(&hash).unwrap()).unwrap();
+        assert_eq!(parsed.short(999), &hash.as_str()[7..]);
     }
 }

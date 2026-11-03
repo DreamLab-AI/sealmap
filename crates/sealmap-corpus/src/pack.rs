@@ -13,7 +13,7 @@
 //! A pack is a header followed by one section per topic, in topic-id order:
 //!
 //! ```text
-//! # sealmap-pack 1
+//! # sealmap-pack 2
 //! generator: sealmap 0.1.0
 //! codebase: ledger
 //! revision: 4f1a9de…
@@ -21,6 +21,7 @@
 //! budget: 65536 bytes
 //! depth: 1
 //! source-window: 40 lines
+//! source-inputs: blake3:<digest of all normalised extraction inputs>
 //! ==== topic LED-01 312 bytes ledger/01-accounts.md
 //! <the topic file, verbatim>
 //! ==== dense LED-01 depth 1 845 bytes
@@ -80,7 +81,7 @@
 //! let input = PackInput::new(&model, &src, &topics, "4f1a9de");
 //! let ids = ["LED-01".to_string()];
 //! let out = pack(&input, &ids, &PackOptions::default()).unwrap();
-//! assert!(out.text.starts_with("# sealmap-pack 1\n"));
+//! assert!(out.text.starts_with("# sealmap-pack 2\n"));
 //! assert!(out.text.contains("==== source LED-01 src/lib.rs:L3-3 26 bytes sym:cargo shop . Ledger#post().\n    pub fn post(&self) {}\n"));
 //! // Over budget: refused, with the sizes a caller needs to shard.
 //! let err = pack(&input, &ids, &PackOptions::default().budget(100)).unwrap_err();
@@ -91,14 +92,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Write as _};
 
 use sealmap_dense::{Dense, SliceOptions};
-use sealmap_model::{Codebase, Fingerprint, SourcePath, SourceSet, SymbolId};
+use sealmap_model::{Codebase, ContentHash, Fingerprint, SourcePath, SourceSet, SymbolId};
 use serde::Serialize;
 
 use crate::seal::{GENERATOR, Lock, Resolution, Topics, citations, resolve, stale, topic_id};
 
+mod selection;
+pub use selection::changed_topics_by_files;
+
 /// Version of the pack format, written in its first line. Bumped whenever a
 /// block's layout or meaning changes.
-pub const PACK_FORMAT_VERSION: u32 = 1;
+pub const PACK_FORMAT_VERSION: u32 = 2;
 
 /// How a pack is built. Every field is recorded in the pack's header.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,17 +160,27 @@ pub struct PackInput<'a> {
     /// The base revision when the topics were chosen by change
     /// ([`changed_topics`]), recorded as `diff:`.
     pub diff: Option<&'a str>,
+    /// Optional deterministic provenance supplied by the IO layer, normally a
+    /// JSON map of repository names to commits and dirty/untracked input paths.
+    /// This is descriptive metadata, not a claim that the review is correct.
+    pub provenance: Option<&'a str>,
 }
 
 impl<'a> PackInput<'a> {
     /// An input with no `diff:` base.
     pub fn new(codebase: &'a Codebase, sources: &'a SourceSet, topics: &'a Topics, revision: &'a str) -> Self {
-        Self { codebase, sources, topics, revision, diff: None }
+        Self { codebase, sources, topics, revision, diff: None, provenance: None }
     }
 
     /// The same input, recording the revision the topics were chosen against.
     pub fn diff(mut self, base: &'a str) -> Self {
         self.diff = Some(base);
+        self
+    }
+
+    /// Include the IO layer's repository provenance in every pack header.
+    pub fn provenance(mut self, provenance: &'a str) -> Self {
+        self.provenance = Some(provenance);
         self
     }
 }
@@ -401,6 +415,7 @@ struct Builder<'a, 'i> {
     options: &'i PackOptions,
     /// Selected topics: id → (file, text), in id order.
     selected: BTreeMap<String, (&'a SourcePath, &'a str)>,
+    source_hash: ContentHash,
 }
 
 impl<'a, 'i> Builder<'a, 'i> {
@@ -431,7 +446,18 @@ impl<'a, 'i> Builder<'a, 'i> {
             }
             selected.insert(id.clone(), files[0]);
         }
-        Ok(Self { input, options, selected })
+        // Length-prefix both path and text, so file boundaries cannot alias.
+        // Hash once: shard planning calls header repeatedly.
+        let mut hash = blake3::Hasher::new();
+        for (path, text) in input.sources.iter() {
+            hash.update(&(path.as_str().len() as u64).to_le_bytes());
+            hash.update(path.as_str().as_bytes());
+            hash.update(&(text.len() as u64).to_le_bytes());
+            hash.update(text.as_bytes());
+        }
+        let source_hash = ContentHash::parse(&format!("blake3:{}", hash.finalize().to_hex()))
+            .expect("BLAKE3 emits a valid full hash");
+        Ok(Self { input, options, selected, source_hash })
     }
 
     fn sections(&self) -> Vec<Section> {
@@ -548,6 +574,10 @@ impl<'a, 'i> Builder<'a, 'i> {
         }
         let _ = writeln!(text, "depth: {}", self.options.depth);
         let _ = writeln!(text, "source-window: {} lines", self.options.source_window);
+        let _ = writeln!(text, "source-inputs: {}", self.source_hash);
+        if let Some(provenance) = input.provenance {
+            let _ = writeln!(text, "provenance: {}", one_line(provenance));
+        }
         if let Some(n) = shard {
             let _ = writeln!(text, "shard: {n}");
         }

@@ -42,8 +42,7 @@ sealmap-corpus = "=0.4.0"
 ```
 
 No Agentbox or model service is required. Extraction examples below also use
-`sealmap-model = "=0.4.0"` and `sealmap-rust = "=0.4.0"`. These versions target
-the 0.4.0 release; use a local checkout while publication is pending.
+`sealmap-model = "=0.4.0"` and `sealmap-rust = "=0.4.0"`.
 
 | API | Caller supplies | Result |
 |---|---|---|

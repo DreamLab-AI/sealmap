@@ -16,8 +16,8 @@ artefact integrity and consistency, not the truth of every review claim.
 
 ## Install and explore
 
-These commands target 0.4.0. While publication is pending, install from the
-repository with `cargo install --path crates/sealmap --locked`.
+These commands target 0.4.0. Alternatively, install from a repository checkout
+with `cargo install --path crates/sealmap --locked`.
 
 ```sh
 cargo install sealmap --version 0.4.0 --locked
@@ -77,7 +77,7 @@ inconclusive. Explicit accepted risks name their decision authority.
 
 Each observation records the exact revision, configuration, captured artefact
 and SHA-256. Executed reproductions include the command and a positive control.
-The tool hashes artefacts but never executes recorded commands. Delivery stages
+Sealmap hashes artefacts but never executes recorded commands. Delivery stages
 (`source`, `tested`, `merged`, `published`, `adopted`, `deployed`) need independent
 evidence and are not a completion percentage.
 

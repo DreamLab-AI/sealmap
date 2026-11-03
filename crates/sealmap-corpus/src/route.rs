@@ -10,6 +10,9 @@
 //! or another family's models; declarations are supplied by the caller and are
 //! **not** attestations of what a remote endpoint actually served. Record the
 //! actual responding model in review evidence. Unknown families fail closed.
+//! Recognition uses bounded model-name stems and versions, not arbitrary shared
+//! prefixes: for example, `gpt-j-6b` needs a catalogue declaration. This is a
+//! conservative naming convention, not an exhaustive registry of model releases.
 //!
 //! The default API is independent of an orchestrator. [`Route::parse_agentbox`]
 //! preserves Agentbox's narrower provider/model grammar as an explicit adapter
@@ -157,19 +160,40 @@ fn rung(text: &str) -> Option<Rung> {
     (identifier(host) && model_ok).then(|| Rung { host: host.into(), model: model.into() })
 }
 
+fn named_stem(model: &str, stem: &str) -> bool {
+    model == stem
+        || model.strip_prefix(stem).and_then(|rest| rest.strip_prefix('-')).is_some_and(|rest| !rest.is_empty())
+}
+
+fn numbered_model(model: &str, prefix: &str, omni_suffix: bool) -> bool {
+    let Some(rest) = model.strip_prefix(prefix) else { return false };
+    let version = match rest.split_once('-') {
+        Some((version, suffix)) if !suffix.is_empty() => version,
+        Some(_) => return false,
+        None => rest,
+    };
+    // GPT-4o is a version token; `gpt-4all` or `o3other` is not. A suffix
+    // describing a size, variant or date starts at a hyphen boundary.
+    let version = if omni_suffix { version.strip_suffix('o').unwrap_or(version) } else { version };
+    version.split('.').all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+}
+
 fn by_model(model: &str) -> Option<Family> {
     // Namespaces and local tags do not change a recognised model's family.
     let m = model.rsplit('/').next()?.split([':', '@']).next()?.to_ascii_lowercase();
-    let o_series = m.len() > 1 && m.starts_with('o') && m.as_bytes()[1].is_ascii_digit();
-    if m.starts_with("claude") {
+    if named_stem(&m, "claude") {
         Some(Family::Anthropic)
-    } else if m.starts_with("gpt") || m.starts_with("codex") || o_series {
+    } else if numbered_model(&m, "gpt-", true)
+        || named_stem(&m, "gpt-oss")
+        || named_stem(&m, "codex")
+        || numbered_model(&m, "o", false)
+    {
         Some(Family::OpenAi)
-    } else if m.starts_with("glm") {
+    } else if named_stem(&m, "glm") {
         Some(Family::Zhipu)
-    } else if m.starts_with("qwen") {
+    } else if named_stem(&m, "qwen") || numbered_model(&m, "qwen", false) {
         Some(Family::Alibaba)
-    } else if m.starts_with("gemini") {
+    } else if named_stem(&m, "gemini") {
         Some(Family::Google)
     } else {
         None

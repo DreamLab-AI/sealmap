@@ -1,5 +1,5 @@
 # sealmap-pack 2
-generator: sealmap 0.3.0
+generator: sealmap 0.4.0
 codebase: ledger
 revision: 4f1a9de0c0ffee
 topics: LED-01 LED-02

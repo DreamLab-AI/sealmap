@@ -16,6 +16,11 @@ verified_commit: eacc59ece21274273c6bf2c83d4642b4fa7acaf5
 ---
 ## For developers
 
+Historical snapshot: this topic describes the earlier pack implementation.
+For the 0.4.0 selection and provenance changes, see
+[COR-07](07-review-evidence-and-selection.md). Its original revision and source
+coordinates below are retained rather than presented as a new verification.
+
 `sealmap pack` turns chosen topics into one text a reviewer can read without
 the repository (`docs/DESIGN.md:84`). For each topic the pack holds the file
 verbatim, the `sealmap-dense` slice around the symbols it cites, the

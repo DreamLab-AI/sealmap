@@ -13,6 +13,9 @@ All crates in this workspace share one version.
   denominator. Commands recorded in evidence are never executed.
 - Conservative `pack::changed_topics_by_files` selection, including missing or
   unknown coverage, source/configuration changes and submodule path changes.
+- Portable route and activity declarations: named providers, namespaced model
+  ids, application-defined activities and explicit family catalogues. Fixed
+  activity vocabularies can use `Tiers::parse_with_activities`.
 
 ### Changed
 - Pack wire format is version 2: the header includes a digest of all normalised
@@ -25,6 +28,9 @@ All crates in this workspace share one version.
 - Documentation and regression expectations incorporate the estate audit's
   distinction between source, package, consumer and live-runtime evidence.
   Seals remain experimental and model agreement remains a ranking signal.
+- `Route::parse` and `Tiers::parse` now use the portable policy. Consumers that
+  require the 0.3 Agentbox vocabulary must select `parse_agentbox` explicitly.
+  `Family` is `Clone` rather than `Copy` to support caller-defined families.
 
 ### Fixed
 - Uncited changes in a cited file, dirty/untracked inputs and unknown source
@@ -33,6 +39,25 @@ All crates in this workspace share one version.
   inputs and lock/build context affect provenance.
 - `ContentHash` deserialisation validates and normalises its representation;
   malformed input can no longer violate the invariant used by `short()`.
+- Seal lock/topic IO, dense output and pack output refuse checkout symlink
+  paths. Dense and seal writes stage content before replacing destinations;
+  malformed seal-lock diagnostics no longer echo input values. Temporary Git
+  exports use private, uniquely created directories and are removed on failure.
+- Fingerprint parsing rejects signed byte pairs and requires ASCII hexadecimal
+  digits. Model-family checks recognise known model identities, reject
+  conflicting declarations and do not infer a
+  family from a provider label alone.
+
+### Limits
+- Receipt checks establish contract consistency and artefact integrity;
+  reviewers still judge the observations and decision authority. Delivery
+  counts are attestations, not completion percentages.
+- File-based selection deliberately keeps uncertain topics. Symbol staleness
+  and seals remain experimental; packs have not been shown to improve review
+  quality over full source when that source fits in context.
+- Local path checks do not provide a sandbox against concurrent hostile
+  filesystem replacement. A failed pack write can leave newly created partial
+  output, so consumers must check the command's exit status.
 
 ## 0.3.0 — 2026-10-31
 

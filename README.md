@@ -28,8 +28,8 @@ comparisons; it never executes commands recorded in a review receipt.
 
 ## Install
 
-Examples below target **0.4.0**. While that release is being published,
-use the source install; the registry command becomes available after publication.
+Examples below target **0.4.0**. Install the pinned package or build from a
+checkout of this repository.
 
 ```sh
 # Released package, pinned for reproducibility:

@@ -33,6 +33,9 @@ All crates in this workspace share one version.
   `Family` is `Clone` rather than `Copy` to support caller-defined families.
 
 ### Fixed
+- Model-family recognition now respects name/version boundaries: foreign names
+  such as `gpt-j` require explicit declarations and cannot earn false
+  cross-family review credit through a shared prefix.
 - Uncited changes in a cited file, dirty/untracked inputs and unknown source
   coverage can no longer disappear behind unchanged symbol hashes.
 - Multi-repository packs identify each source baseline; untracked extraction

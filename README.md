@@ -381,8 +381,10 @@ CLI or library for deterministic extraction and evidence checks.
 
 In the DreamLab-AI estate, the pieces have separate jobs:
 
-- Authored `docs/diagrams` topics carry narratives, architectural decisions and
-  findings. They are reviewed against source; generated output does not replace them.
+- Authored diagram topics carry narratives, architectural decisions and findings.
+  They are reviewed against source; generated output does not replace them. The
+  estate keeps them in one master record, VisionFlow `docs/diagrams`; sealmap's own
+  are its `sealmap` area there.
 - Sealmap supplies Rust views, stable symbol locators, bounded packs and receipt
   validation. Its packs may contain source, so choose recipients accordingly.
 - [diagram-ir](https://github.com/DreamLab-AI/diagram-ir) and
@@ -437,7 +439,7 @@ RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps
 
 See [CI](.github/workflows/ci.yml), [design decisions](docs/DESIGN.md),
 [receipt documentation](docs/REVIEW-EVIDENCE.md),
-[architectural diagrams](docs/diagrams) and [release history](CHANGELOG.md).
+[architectural diagrams](https://github.com/DreamLab-AI/VisionFlow/tree/main/docs/diagrams/sealmap) and [release history](CHANGELOG.md).
 
 ## Licence
 

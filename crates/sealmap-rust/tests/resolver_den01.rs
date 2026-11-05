@@ -1,5 +1,5 @@
 //! Resolver defects found by reading sealmap's own dense projection
-//! (DEN-01.6): edges the model lost or that depended on unrelated code.
+//! (SM-21.6): edges the model lost or that depended on unrelated code.
 
 use sealmap_model::{Codebase, Confidence, SourceSet, SymbolId};
 use sealmap_rust::{ExternalCalls, RustOptions, extract};
@@ -34,7 +34,7 @@ fn exact(s: &str) -> (String, Confidence) {
     (s.to_owned(), Confidence::Exact)
 }
 
-/// DEN-01.6 (a): `Self::f(..)` was dropped because `Self` sat on the prelude
+/// SM-21.6 (a): `Self::f(..)` was dropped because `Self` sat on the prelude
 /// list, checked before resolution. `Self` names the enclosing impl's self
 /// type (or the trait, in a provided method).
 #[test]
@@ -90,7 +90,7 @@ fn self_path_without_a_self_type_is_dropped() {
     assert!(calls(&cb, "sym:cargo ledger . orphan().").is_empty());
 }
 
-/// DEN-01.6 (b): calls in a match-arm guard were only formatted into the arm
+/// SM-21.6 (b): calls in a match-arm guard were only formatted into the arm
 /// label and never walked. A guard sees the arm's bindings.
 #[test]
 fn match_guard_calls_are_walked() {
@@ -115,7 +115,7 @@ fn match_guard_calls_are_walked() {
     );
 }
 
-/// DEN-01.6 (c): a method called on a struct literal (`Parser { .. }.id()`)
+/// SM-21.6 (c): a method called on a struct literal (`Parser { .. }.id()`)
 /// was lost: the walker classed the receiver as unknown. A struct literal
 /// names its own type.
 #[test]
@@ -151,7 +151,7 @@ const LEDGER_CORE: &str = r#"
     pub fn latest() -> Option<Entry> { None }
 "#;
 
-/// DEN-01.6 (d): a name-guessed edge must not depend on unrelated code.
+/// SM-21.6 (d): a name-guessed edge must not depend on unrelated code.
 /// Adding `reconcile` methods to a crate the caller cannot reach (not a
 /// dependency) once removed a correct guessed edge.
 #[test]
@@ -233,7 +233,7 @@ fn binaries_and_target_dependencies_reach_their_libraries() {
     assert!(main.contains(&exact("sym:cargo ledger_cli . version().")), "{main:?}");
 }
 
-/// Found by reading the dense projection of `sealmap pack` (DEN-01.6): a
+/// Found by reading the dense projection of `sealmap pack` (SM-21.6): a
 /// path's leading segment is a module or type, never a function, so a local
 /// `fn audit` must not capture `audit::record()` when the module `audit` is
 /// imported. Functions and modules live in different namespaces.

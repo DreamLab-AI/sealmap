@@ -28,10 +28,9 @@ jobs:
           cargo build --release -p sealmap
           for i in 1 2; do target/release/sealmap generate . --name sealmap -o "$RUNNER_TEMP/gen$i"; done
           diff -r "$RUNNER_TEMP/gen1" "$RUNNER_TEMP/gen2"
-          # A review pack is byte-identical too, whatever the order of its topics.
-          target/release/sealmap pack COR-04 DEN-01 --name sealmap > "$RUNNER_TEMP/pack1.txt"
-          target/release/sealmap pack DEN-01 COR-04 --name sealmap > "$RUNNER_TEMP/pack2.txt"
-          cmp "$RUNNER_TEMP/pack1.txt" "$RUNNER_TEMP/pack2.txt"
+          # Pack determinism across runs and topic order is a cargo test
+          # (crates/sealmap/tests/cli.rs) over a fixture corpus, so it needs no
+          # authored corpus here.
 
   # The declared MSRV (workspace `rust-version`). `--locked` keeps the
   # lockfile's `ignore 0.4.29`: 0.4.30 uses let-chains (Rust 1.88) without
@@ -62,18 +61,3 @@ jobs:
       - run: node tools/validate-mermaid.mjs $(find .sealmap -name '*.md')
         env:
           MODE: render
-
-  # The hand-authored corpus: structure, every path:line citation resolved at
-  # its topic's declared verified_commit (hence full history), and a Pele
-  # render of every diagram (in-process, no browser) with the 4500 px ceiling.
-  diagrams:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: node docs/diagrams/tools/diagram-index-gen.cjs docs/diagrams --check --cite-check --strict-citations
-      - run: node docs/diagrams/tools/diagram-index-gen.cjs docs/diagrams --check --render

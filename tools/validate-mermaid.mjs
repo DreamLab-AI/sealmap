@@ -1,11 +1,11 @@
 // Validate every ```mermaid block in the given Markdown files with Pele, the
 // estate's diagram renderer (VisionFlow ADR-2020): sha256-pinned in
-// docs/diagrams/tools/vendor/pele, in-process, no browser and no npm install.
+// tools/vendor/pele, in-process, no browser and no npm install.
 // Usage: sealmap generate . -o .sealmap && node tools/validate-mermaid.mjs $(find .sealmap -name '*.md')
 // Env: MODE=render for a full render (layout faults surface only there); default parse.
 import fs from 'fs';
 import { createRequire } from 'module';
-const peleStatic = createRequire(import.meta.url)('../docs/diagrams/tools/lib/pele-static.cjs');
+const peleStatic = createRequire(import.meta.url)('./lib/pele-static.cjs');
 const pele = await peleStatic.loadPele();
 const MODE = process.env.MODE || 'parse';
 const blocks = [];
